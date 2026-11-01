@@ -64,6 +64,7 @@ enum IntroSilence {
 
 struct IntroSilenceDetector {
     let rate: Double
+    init(rate: Double) { self.rate = rate }
     private(set) var frames = 0
     private var energy = 0.0, samples = 0, activeWindows = 0
     private var firstSoundFrame = 0
