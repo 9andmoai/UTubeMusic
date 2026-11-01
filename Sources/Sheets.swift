@@ -142,6 +142,7 @@ struct SongActionsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var delete = false
     @State private var removeDownload = false
+    @State private var editIntro = false
     var body: some View {
         NavigationStack {
             List {
@@ -162,6 +163,9 @@ struct SongActionsSheet: View {
                 }
                 Button { player.start(library.songs, at: song); dismiss() } label: { Label("再生", systemImage: "play.fill") }.disabled(!library.isPlayable(song))
                 Button { player.enqueue(song); dismiss() } label: { Label("再生キューに追加", systemImage: "text.line.first.and.arrowtriangle.forward") }.disabled(!library.isPlayable(song))
+                Button { editIntro = true } label: {
+                    Label("冒頭の無音をスキップ", systemImage: "forward.frame")
+                }
                 Section("プレイリストに追加") {
                     if library.playlists.isEmpty { Text("ライブラリの＋からプレイリストを作成できます。").font(.caption).foregroundStyle(Palette.secondary) }
                     ForEach(library.playlists) { playlist in
@@ -178,6 +182,7 @@ struct SongActionsSheet: View {
                 }
             }.scrollContentBackground(.hidden).background(Palette.background).tint(Palette.text)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("閉じる") { dismiss() } } }
+                .sheet(isPresented: $editIntro) { IntroSkipSheet(song: library.song(song.id) ?? song) }
                 .confirmationDialog("このiPhoneから曲を削除しますか？プレイリストからも外れます。検索から再保存できます。", isPresented: $delete, titleVisibility: .visible) {
                     Button("曲とファイルを削除", role: .destructive) {
                         do { try library.delete(song); player.remove(song.id); dismiss() } catch { library.message = error.localizedDescription }
@@ -296,7 +301,7 @@ struct SettingsView: View {
                         .font(.subheadline).foregroundStyle(Palette.secondary)
                 }
                 Section {
-                    LabeledContent("バージョン", value: "0.3.3 開発版")
+                    LabeledContent("バージョン", value: "0.3.4 開発版")
                     Text("個人用の音楽ライブラリ。曲の取得はYouTubeの仕様や制限により失敗する場合があります。")
                         .font(.caption).foregroundStyle(Palette.secondary)
                     Text("Python / yt-dlp / yt-dlp-ejs / certifi / yt-dlp-apple-webkit-jsi / ytmusicapi / requests を使用。ライセンスはアプリ内の同梱ファイル ThirdPartyNotices を参照。")

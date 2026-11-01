@@ -16,6 +16,14 @@ struct Song: Identifiable, Codable, Equatable {
     var measuredLoudness: Double? = nil
     var loudnessFileName: String? = nil
     var sourceLoudnessDB: Double? = nil
+    var introSkipSeconds: Double? = nil
+
+    func startOffset(duration actual: Double? = nil) -> Double {
+        guard let value = introSkipSeconds, value.isFinite, value > 0 else { return 0 }
+        let length = actual ?? duration
+        let limit = length.isFinite && length > 0 ? min(30, max(0, length - 0.5)) : 30
+        return min(value, limit)
+    }
 
     var timeLabel: String { Self.clock(duration) }
     static func clock(_ time: Double) -> String {

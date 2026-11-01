@@ -5,6 +5,12 @@ import AVFoundation
 
 @MainActor
 final class ScreenCaptureTests: XCTestCase {
+    func testCaptureIntroSkip() async throws {
+        let (library, player, music, song) = try playableLibrary()
+        defer { player.pause() }
+        try library.setIntroSkip(song.id, seconds: 1)
+        try await render(IntroSkipSheet(song: library.song(song.id)!).environmentObject(library).environmentObject(player).environmentObject(music), name: "native-intro-skip")
+    }
     func testCaptureLoudnessSettings() async throws {
         let (library, player, music, _) = try playableLibrary()
         defer { player.pause() }

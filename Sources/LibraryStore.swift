@@ -114,6 +114,13 @@ final class LibraryStore: ObservableObject {
         guard let db, db.isFinite, (-60...60).contains(db), song(id)?.sourceLoudnessDB != db else { return }
         try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].sourceLoudnessDB = db } }
     }
+    func setIntroSkip(_ id: String, seconds: Double) throws {
+        guard let song = song(id), seconds.isFinite, (0...30).contains(seconds),
+              song.duration <= 0 || seconds <= max(0, song.duration - 0.5) else {
+            throw AppFailure("開始位置は曲の終わりより手前の0〜30秒で指定してください。")
+        }
+        try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].introSkipSeconds = seconds } }
+    }
     func addOnline(_ song: Song, favorite: Bool, playlistIDs: Set<UUID>) throws {
         var value = self.song(song.id) ?? song
         if !isAvailable(value) { value.onlineOnly = true }
@@ -128,6 +135,7 @@ final class LibraryStore: ObservableObject {
             if let i = songs.firstIndex(where: { $0.id == song.id }) {
                 var updated = song
                 updated.favorite = song.favorite || songs[i].favorite
+                updated.introSkipSeconds = song.introSkipSeconds ?? songs[i].introSkipSeconds
                 songs[i] = updated
             } else { songs.insert(song, at: 0) }
             for i in playlists.indices where playlistIDs.contains(playlists[i].id) {

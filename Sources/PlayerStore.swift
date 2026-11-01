@@ -25,6 +25,12 @@ final class PlayerStore: ObservableObject {
     private var volumeTask: Task<Void, Never>?
     @Published private(set) var preparingVolume = false
     private var playAfterVolume = false
+    private var needsStartPosition = false
+    private var seekingStart = false
+    private var waitingForStartReadiness = false
+    private var playAfterStart = false
+    private var startSeekGeneration = UUID()
+    var preparingStartPosition: Bool { seekingStart || waitingForStartReadiness }
     var playbackVolume: Float { player.volume }
     private let player = AVPlayer()
     private let request: ([String: String]) async throws -> EngineResponse
@@ -111,15 +117,40 @@ final class PlayerStore: ObservableObject {
         guard let current else { return }
         if player.currentItem == nil, current.onlineOnly == true { load(current); return }
         if preparingVolume { playAfterVolume = true; return }
-        if duration > 0 && elapsed >= duration - 0.1 { seek(0) }
+        if seekingStart { playAfterStart = true; return }
+        if needsStartPosition {
+            let offset = (library.song(current.id) ?? current).startOffset(duration: duration)
+            if offset > 0, let item = player.currentItem {
+                if item.status != .readyToPlay {
+                    waitingForStartReadiness = true; playAfterStart = true; return
+                }
+                needsStartPosition = false
+                let token = UUID(); startSeekGeneration = token
+                seekingStart = true; playAfterStart = true
+                player.seek(to: CMTime(seconds: offset, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self, weak item] success in
+                    Task { @MainActor in
+                        guard let self, let item, self.player.currentItem === item, self.startSeekGeneration == token else { return }
+                        self.seekingStart = false
+                        let resume = self.playAfterStart; self.playAfterStart = false
+                        guard success else { self.pause(); self.error = "設定した開始位置に移動できませんでした。再生をやり直してください。"; return }
+                        self.elapsed = offset; self.updateNowPlaying()
+                        if resume { self.play() }
+                    }
+                }
+                return
+            }
+            needsStartPosition = false
+        }
+        if duration > 0 && elapsed >= duration - 0.1 { seek((library.song(current.id) ?? current).startOffset(duration: duration)) }
         do {
             try AVAudioSession.sharedInstance().setActive(true)
             player.play(); playing = true; updateNowPlaying()
         } catch { self.error = error.localizedDescription }
     }
-    private func pauseMain() { playAfterVolume = false; player.pause(); playing = false; updateNowPlaying() }
+    private func pauseMain() { playAfterStart = false; playAfterVolume = false; player.pause(); playing = false; updateNowPlaying() }
     func pause() { streamGeneration = UUID(); streamTask?.cancel(); preview.stop(resume: false); pauseMain() }
     func toggle() {
+        if seekingStart || waitingForStartReadiness { playAfterStart ? pause() : play(); return }
         if preparingVolume { playAfterVolume ? pause() : play(); return }
         if preview.song != nil { preview.stop(resume: false) }
         else { playing ? pause() : play() }
@@ -127,6 +158,7 @@ final class PlayerStore: ObservableObject {
     func seek(_ seconds: Double) {
         preview.stop(resume: false)
         guard seconds.isFinite else { return }
+        resetStartPreparation()
         elapsed = min(max(0, seconds), max(0, duration))
         player.seek(to: CMTime(seconds: elapsed, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         updateNowPlaying()
@@ -144,9 +176,10 @@ final class PlayerStore: ObservableObject {
     }
     func previous() {
         preview.stop(resume: false)
-        if elapsed > 3 { seek(0); return }
+        let offset = current.flatMap { library.song($0.id) ?? $0 }?.startOffset(duration: duration) ?? 0
+        if elapsed > offset + 3 { seek(offset); return }
         if let id = queue.previous(), let song = library.song(id), library.isPlayable(song) { load(song) }
-        else { seek(0) }
+        else { seek(offset) }
     }
     func toggleShuffle() { queue.toggleShuffle() }
     func toggleRepeat() { queue.repeatMode = queue.repeatMode.next }
@@ -157,7 +190,7 @@ final class PlayerStore: ObservableObject {
         let wasCurrent = current?.id == id
         queue.remove(id)
         if wasCurrent {
-            pause(); volumeTask?.cancel(); preparingVolume = false; player.replaceCurrentItem(with: nil); current = nil; elapsed = 0; duration = 0
+            resetStartPreparation(); pause(); volumeTask?.cancel(); preparingVolume = false; player.replaceCurrentItem(with: nil); current = nil; elapsed = 0; duration = 0
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             if let next = queue.current, let song = library.song(next), library.isPlayable(song) { load(song) }
         }
@@ -172,7 +205,7 @@ final class PlayerStore: ObservableObject {
     func releaseRemovedDownload(_ id: String) {
         if preview.song?.id == id { preview.stop(resume: current?.id != id) }
         guard current?.id == id else { return }
-        pause()
+        resetStartPreparation(); pause()
         volumeTask?.cancel(); preparingVolume = false
         durationTask?.cancel(); statusObservation = nil
         player.replaceCurrentItem(with: nil)
@@ -182,9 +215,18 @@ final class PlayerStore: ObservableObject {
         // Keep queue position, shuffle order and repeat mode. The next play
         // resolves the online audio instead of continuing an unlinked local file.
     }
+    private func finishStartReadiness() {
+        guard waitingForStartReadiness else { return }
+        waitingForStartReadiness = false
+        if playAfterStart { play() }
+    }
+    private func resetStartPreparation() {
+        startSeekGeneration = UUID(); waitingForStartReadiness = false; seekingStart = false; playAfterStart = false; needsStartPosition = false
+    }
     private func load(_ song: Song, autoplay: Bool = true) {
         preview.stop(resume: false)
         let song = library.song(song.id) ?? song
+        resetStartPreparation(); needsStartPosition = true
         streamGeneration = UUID(); streamTask?.cancel()
         volumeTask?.cancel(); preparingVolume = false; playAfterVolume = false
         normalizedVolume = 1; player.volume = 1
@@ -232,6 +274,7 @@ final class PlayerStore: ObservableObject {
             Task { @MainActor in
                 guard let self, self.player.currentItem === item else { return }
                 if failed { self.pause(); self.error = detail ?? "この曲を再生できません。" }
+                else if item.status == .readyToPlay { self.finishStartReadiness() }
             }
         }
         playing = false
@@ -283,7 +326,10 @@ final class PlayerStore: ObservableObject {
                     Task { @MainActor in
                         guard let self, self.player.currentItem === item else { return }
                         if item.status == .failed { self.pause(); self.error = "オンライン再生に失敗しました。通信を確認して再生し直してください。" }
-                        else if item.status == .readyToPlay, self.duration <= 0, item.duration.seconds.isFinite { self.duration = item.duration.seconds; self.updateNowPlaying() }
+                        else if item.status == .readyToPlay {
+                            if self.duration <= 0, item.duration.seconds.isFinite { self.duration = item.duration.seconds; self.updateNowPlaying() }
+                            self.finishStartReadiness()
+                        }
                     }
                 }
                 if autoplay { self.play() }
