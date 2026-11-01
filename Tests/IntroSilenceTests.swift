@@ -32,6 +32,22 @@ final class IntroSilenceTests: XCTestCase {
         XCTAssertFalse(IntroSilence.validPrefix(response(206, "bytes 0-999998/999999", url: url)))
         XCTAssertFalse(IntroSilence.validPrefix(response(206, "bytes 0-262143/999999", url: URL(string: "https://example.com/audio")!)))
     }
+    func testMalformedAACPrefixesAreRejectedWithoutReadingOutsideData() {
+        for data in [Data(), Data(repeating: 0, count: 64), Data(repeating: 255, count: 64), Data(repeating: 0, count: IntroSilence.prefixLimit+1)] {
+            XCTAssertNil(AACPrefix.adts(data))
+        }
+    }
+    func testStartupCleanupOnlyDeletesOwnedTemporaryAudio() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let managed = root.appendingPathComponent("intro-" + UUID().uuidString + ".m4a")
+        let keep = root.appendingPathComponent("music.m4a")
+        try Data([1,2,3]).write(to: managed); try Data([4,5]).write(to: keep)
+        IntroSilence.cleanup(directory: root)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: managed.path))
+        XCTAssertEqual(try Data(contentsOf: keep), Data([4,5]))
+    }
     func testAACAndDASHPrefixDetectionDoesNotChangeAudio() async throws {
         let source = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "audio-fixtures", withExtension: "json"))
         let fixtures = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: source))
@@ -41,7 +57,7 @@ final class IntroSilenceTests: XCTestCase {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
                 defer { try? FileManager.default.removeItem(at: url) }
                 let prefix = Data(bytes.prefix(size)); try prefix.write(to: url)
-                let offset = try await IntroSilence.read(url)
+                let offset = size == bytes.count ? try await IntroSilence.read(url) : await IntroSilence.readPrefix(prefix)
                 XCTAssertEqual(try XCTUnwrap(offset), 1.85, accuracy: 0.16, "\(name), prefix \(size)")
                 XCTAssertEqual(try Data(contentsOf: url), prefix)
             }

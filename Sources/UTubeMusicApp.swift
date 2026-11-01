@@ -6,6 +6,7 @@ struct UTubeMusicApp: App {
     @StateObject private var player: PlayerStore
     @StateObject private var music: MusicService
     init() {
+        IntroSilence.cleanup()
         let library = LibraryStore()
         _library = StateObject(wrappedValue: library)
         _player = StateObject(wrappedValue: PlayerStore(library: library))

@@ -4,6 +4,24 @@ import AVFoundation
 enum IntroSilence {
     static let scanSeconds = 8.0
     static let prefixLimit = 262144
+    static var cacheDirectory: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("UTubeMusic-Intro", isDirectory: true)
+    }
+    private static func temporaryURL(_ ext: String) throws -> URL {
+        try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        return cacheDirectory.appendingPathComponent("intro-" + UUID().uuidString + "." + ext)
+    }
+    static func cleanup(directory: URL = cacheDirectory) {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return }
+        for file in files {
+            let name = file.deletingPathExtension().lastPathComponent
+            guard ["m4a", "aac"].contains(file.pathExtension), name.hasPrefix("intro-"),
+                  UUID(uuidString: String(name.dropFirst(6))) != nil,
+                  let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+                  values.isRegularFile == true, values.isSymbolicLink != true else { continue }
+            try? FileManager.default.removeItem(at: file)
+        }
+    }
     static func read(_ url: URL) async throws -> Double? {
         let task = Task.detached(priority: .userInitiated) { () throws -> Double? in
             let file = try AVAudioFile(forReading: url)
@@ -27,6 +45,13 @@ enum IntroSilence {
         }
         return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
     }
+    static func readPrefix(_ data: Data) async -> Double? {
+        guard data.count <= prefixLimit else { return nil }
+        guard let url = try? temporaryURL("aac") else { return nil }
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard let packets = AACPrefix.adts(data) else { return nil }
+        do { try packets.write(to: url); return try await read(url) } catch { return nil }
+    }
     static func validPrefix(_ response: HTTPURLResponse) -> Bool {
         guard response.statusCode == 206, response.url?.scheme == "https",
               response.url?.host?.hasSuffix(".googlevideo.com") == true,
@@ -44,7 +69,7 @@ enum IntroSilence {
         for (key,value) in headers where ["user-agent", "referer", "origin", "accept", "accept-language"].contains(key.lowercased()) { request.setValue(value, forHTTPHeaderField: key) }
         request.setValue("bytes=0-\(prefixLimit - 1)", forHTTPHeaderField: "Range")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("intro-" + UUID().uuidString + ".m4a")
+        guard let temporary = try? temporaryURL("m4a") else { return nil }
         defer { try? FileManager.default.removeItem(at: temporary) }
         do {
             let (stream, response) = try await session.bytes(for: request)
@@ -57,7 +82,8 @@ enum IntroSilence {
             }
             try Task.checkCancellation()
             try bytes.write(to: temporary)
-            return try await read(temporary)
+            if let offset = try? await read(temporary) { return offset }
+            return await readPrefix(bytes)
         } catch { return nil }
     }
 }
