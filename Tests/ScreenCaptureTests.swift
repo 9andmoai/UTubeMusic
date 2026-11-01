@@ -85,7 +85,7 @@ final class ScreenCaptureTests: XCTestCase {
     }
     func testCaptureNativeHome() async throws {
         let library = LibraryStore(root: try root())
-        let player = PlayerStore(library: library)
+        let player = PlayerStore(library: library, introProbe: { _, _ in nil })
         let music = MusicService(library: library)
         let catalog = CatalogStore { _ in
             let data = Data(#"{"ok":true,"sections":[{"id":"public","title":"見つけるプレイリスト","items":[{"id":"PLpreview01","kind":"playlist","title":"Chill & Relax","subtitle":"画面確認用","thumbnail":null},{"id":"MPREb_preview","kind":"album","title":"Piano Collection","subtitle":"画面確認用","thumbnail":null}]}]}"#.utf8)
@@ -106,7 +106,7 @@ final class ScreenCaptureTests: XCTestCase {
         }
         let song = Song(id: "local-preview", title: "UTube Music 再生テスト", artist: "画面確認用の無音データ", duration: 60, fileName: url.lastPathComponent, favorite: true)
         try library.save(song, playlistID: nil)
-        let player = PlayerStore(library: library)
+        let player = PlayerStore(library: library, introProbe: { _, _ in nil })
         player.start([song], at: song)
         defer { player.pause() }
         try await render(NowPlayingView().environmentObject(library).environmentObject(player), name: "native-player")
@@ -125,7 +125,7 @@ final class ScreenCaptureTests: XCTestCase {
         let song = Song(id: "local-layout", title: "お気に入りのピアノ", artist: "画面確認用の無音データ", duration: 60, fileName: url.lastPathComponent, favorite: true)
         let list = try library.createPlaylist("夜に聴きたい曲")
         try library.save(song, playlistID: list)
-        let player = PlayerStore(library: library)
+        let player = PlayerStore(library: library, introProbe: { _, _ in nil })
         player.start([song], at: song)
         return (library, player, MusicService(library: library), song)
     }

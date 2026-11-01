@@ -7,7 +7,8 @@ struct IntroSkipSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var seconds: Double
     @State private var error: String?
-    init(song: Song) { self.song = song; _seconds = State(initialValue: song.startOffset()) }
+    @State private var automatic: Bool
+    init(song: Song) { self.song = song; _seconds = State(initialValue: song.startOffset()); _automatic = State(initialValue: song.introSkipSeconds == nil) }
     private var limit: Double { song.duration > 0 ? min(30, max(0, song.duration - 0.5)) : 30 }
     private var label: String { String(format: "%.2f秒", seconds) }
     var body: some View {
@@ -18,6 +19,13 @@ struct IntroSkipSheet: View {
                     Text(song.artist).foregroundStyle(Palette.secondary)
                 }
                 Section("この曲の開始位置") {
+                    Picker("指定方法", selection: $automatic) {
+                        Text("自動（初期設定）").tag(true)
+                        Text("秒数を指定").tag(false)
+                    }
+                    if automatic {
+                        Text(player.autoSkipIntro ? "冒頭のほぼ無音を自動で確認します。検出できなければ元の先頭から再生します。" : "全体設定で自動スキップがオフになっています。")
+                    } else {
                     LabeledContent("冒頭をスキップ", value: label)
                     if limit > 0 {
                         Slider(value: $seconds, in: 0...limit, step: 0.25).accessibilityLabel("冒頭を飛ばす秒数")
@@ -27,10 +35,11 @@ struct IntroSkipSheet: View {
                         Button("現在の再生位置を使う") { seconds = min(limit, max(0, player.elapsed)) }
                     }
                     Button("スキップしない（0秒）") { seconds = 0 }
+                    }
                 }
                 Section {
                     Text("音が出始める少し手前を指定してください。保存すると、次回この曲を再生するときとリピート時に指定した位置から始まります。オンライン・ダウンロード済みの両方に対応します。")
-                    Text("元の音声ファイル・お気に入り・プレイリストは変更しません。自動検出ではないため、静かなイントロがある曲は調整してください。再生時間は元の音源の位置を表示します。")
+                    Text("元の音声ファイル・お気に入り・プレイリストは変更しません。静かなイントロが飛ばされる場合は、秒数指定で0秒にしてください。再生時間は元の音源の位置を表示します。")
                 }.font(.caption).foregroundStyle(Palette.secondary)
                 if let error { Text(error).foregroundStyle(Palette.accent) }
             }.scrollContentBackground(.hidden).background(Palette.background).foregroundStyle(Palette.text).tint(Palette.accent)
@@ -39,7 +48,7 @@ struct IntroSkipSheet: View {
                     ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("保存") {
-                            do { try library.setIntroSkip(song.id, seconds: seconds); dismiss() }
+                            do { if automatic { try library.useAutomaticIntro(song.id) } else { try library.setIntroSkip(song.id, seconds: seconds) }; dismiss() }
                             catch { self.error = error.localizedDescription }
                         }
                     }

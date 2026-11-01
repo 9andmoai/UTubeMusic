@@ -39,6 +39,28 @@ final class IntroSkipTests: XCTestCase {
         try reload.setIntroSkip(a.id, seconds: 0)
         XCTAssertEqual(reload.song(a.id)?.startOffset(), 0)
     }
+    func testAutomaticOnlineSkipIsOnByDefaultAndCachedForRepeat() async throws {
+        UserDefaults.standard.removeObject(forKey: "autoSkipIntro")
+        let (library, a, b, url) = try fixture()
+        try library.removeDownload(a.id)
+        let response = try JSONDecoder().decode(EngineResponse.self, from: Data(#"{"ok":true,"url":"https://r1.googlevideo.com/audio"}"#.utf8))
+        var probes = 0
+        let player = PlayerStore(library: library, introProbe: { _, _ in probes += 1; return 0.75 }, request: { _ in response }, streamItem: { _, _ in AVPlayerItem(url: url) })
+        defer { player.pause(); UserDefaults.standard.removeObject(forKey: "autoSkipIntro") }
+        XCTAssertTrue(player.autoSkipIntro)
+        player.start([a], at: a); try await settle(player)
+        XCTAssertGreaterThanOrEqual(player.elapsed, 0.74); XCTAssertEqual(probes, 1)
+        XCTAssertEqual(library.song(a.id)?.detectedIntroSeconds, 0.75)
+        player.toggleRepeat(); player.toggleRepeat(); player.next(automatically: true)
+        try await Task.sleep(nanoseconds: 100_000_000); try await settle(player)
+        XCTAssertGreaterThanOrEqual(player.elapsed, 0.74); XCTAssertEqual(probes, 1)
+        try library.setIntroSkip(a.id, seconds: 0)
+        XCTAssertEqual(library.song(a.id)?.startOffset(), 0)
+        try library.useAutomaticIntro(a.id)
+        XCTAssertEqual(library.song(a.id)?.startOffset(), 0.75)
+        XCTAssertEqual(library.song(a.id)?.startOffset(automatic: false), 0)
+        XCTAssertTrue(library.isAvailable(b))
+    }
     func testInvalidOffsetsAreRejectedAndOldSongsDefaultToZero() throws {
         let (library, a, _, _) = try fixture()
         XCTAssertEqual(a.startOffset(), 0)
@@ -51,7 +73,7 @@ final class IntroSkipTests: XCTestCase {
     func testLocalStartRepeatAndPreviousUseOffsetAndManualSeekStillWorks() async throws {
         let (library, a, _, _) = try fixture()
         try library.setIntroSkip(a.id, seconds: 0.5)
-        let player = PlayerStore(library: library); player.normalizeVolume = false
+        let player = PlayerStore(library: library, introProbe: { _, _ in nil }); player.normalizeVolume = false
         defer { player.pause(); UserDefaults.standard.removeObject(forKey: "normalizeVolume") }
         player.start([a], at: a); try await settle(player)
         XCTAssertGreaterThanOrEqual(player.elapsed, 0.49)
@@ -70,7 +92,7 @@ final class IntroSkipTests: XCTestCase {
         try XCTUnwrap(data["regular"].flatMap { Data(base64Encoded: $0) }).write(to: url)
         try library.setIntroSkip(a.id, seconds: 0.5); try library.setIntroSkip(b.id, seconds: 1)
         let response = try JSONDecoder().decode(EngineResponse.self, from: Data(#"{"ok":true,"url":"https://r1.googlevideo.com/audio"}"#.utf8))
-        let player = PlayerStore(library: library, request: { _ in response }, streamItem: { _, _ in AVPlayerItem(url: url) })
+        let player = PlayerStore(library: library, introProbe: { _, _ in nil }, request: { _ in response }, streamItem: { _, _ in AVPlayerItem(url: url) })
         defer { player.pause() }
         player.start([a,b], at: a); try await settle(player)
         XCTAssertGreaterThanOrEqual(player.elapsed, 0.49)

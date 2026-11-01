@@ -32,7 +32,7 @@ final class OnlineTests: XCTestCase {
         let b = Song(id: "00000000002", title: "B", artist: "Artist", duration: 10)
         for song in [a,b] { try library.addOnline(song, favorite: false, playlistIDs: []) }
         var pending: CheckedContinuation<EngineResponse, Error>?
-        let player = PlayerStore(library: library, request: { _ in
+        let player = PlayerStore(library: library, introProbe: { _, _ in nil }, request: { _ in
             try await withCheckedThrowingContinuation { pending = $0 }
         })
         defer { player.pause() }
@@ -72,7 +72,7 @@ final class OnlineTests: XCTestCase {
         for song in [a,b] { try library.addOnline(song, favorite: false, playlistIDs: []) }
         let response = try JSONDecoder().decode(EngineResponse.self, from: Data(#"{"ok":true,"url":"https://r1.googlevideo.com/test"}"#.utf8))
         var items: [AVPlayerItem] = []
-        let player = PlayerStore(library: library, request: { _ in response }, streamItem: { _, _ in
+        let player = PlayerStore(library: library, introProbe: { _, _ in nil }, request: { _ in response }, streamItem: { _, _ in
             let item = AVPlayerItem(url: fixture); items.append(item); return item
         })
         defer { player.pause() }

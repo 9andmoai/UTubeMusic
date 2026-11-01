@@ -118,7 +118,7 @@ final class AudioTimingTests: XCTestCase {
         let source = try fixture("regular", in: folder), original = try Data(contentsOf: source)
         let song = Song(id: "AbCdEf123_-", title: "Saved", artist: "Artist", duration: 6, fileName: source.lastPathComponent)
         try store.save(song, playlistIDs: [])
-        let player = PlayerStore(library: store); player.start([song], at: song); player.pause()
+        let player = PlayerStore(library: store, introProbe: { _, _ in nil }); player.start([song], at: song); player.pause()
         let deadline = Date().addingTimeInterval(5)
         while player.duration > 3.15 && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertEqual(player.duration, 3, accuracy: 0.15)
@@ -134,7 +134,7 @@ final class AudioTimingTests: XCTestCase {
         let second = Song(id: "second", title: "Second", artist: "Artist", duration: 3,
                           fileName: source.lastPathComponent, audioTimingVersion: 1)
         try store.save(first, playlistIDs: []); try store.save(second, playlistIDs: [])
-        let player = PlayerStore(library: store); player.start([first, second], at: first)
+        let player = PlayerStore(library: store, introProbe: { _, _ in nil }); player.start([first, second], at: first)
         let deadline = Date().addingTimeInterval(5)
         while player.duration > 3.15 && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertEqual(player.duration, 3, accuracy: 0.15)

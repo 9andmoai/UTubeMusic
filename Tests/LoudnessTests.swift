@@ -80,7 +80,7 @@ final class LoudnessPlaybackTests: XCTestCase {
     }
     func testPauseDuringFirstAnalysisDoesNotAutoplayAndCachedReplayAttenuates() async throws {
         let (store, song) = try fixture()
-        let player = PlayerStore(library: store)
+        let player = PlayerStore(library: store, introProbe: { _, _ in nil })
         player.normalizeVolume = true
         defer { player.pause(); UserDefaults.standard.removeObject(forKey: "normalizeVolume") }
         player.start([song], at: song); player.pause()
@@ -98,7 +98,7 @@ final class LoudnessPlaybackTests: XCTestCase {
         try store.addOnline(online, favorite: true, playlistIDs: [])
         let data = Data(#"{"ok":true,"url":"https://r1.googlevideo.com/audio","loudness_db":6}"#.utf8)
         let response = try JSONDecoder().decode(EngineResponse.self, from: data)
-        let player = PlayerStore(library: store, request: { _ in response }, streamItem: { _, _ in AVPlayerItem(url: store.file(original.fileName)!) })
+        let player = PlayerStore(library: store, introProbe: { _, _ in nil }, request: { _ in response }, streamItem: { _, _ in AVPlayerItem(url: store.file(original.fileName)!) })
         player.normalizeVolume = true
         defer { player.pause(); UserDefaults.standard.removeObject(forKey: "normalizeVolume") }
         player.start([online], at: online)

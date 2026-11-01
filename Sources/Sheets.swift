@@ -275,6 +275,11 @@ struct SettingsView: View {
                     LabeledContent("曲の容量", value: ByteCountFormatter.string(fromByteCount: library.totalBytes, countStyle: .file))
                     Button { importing = true } label: { Label("音声ファイルを読み込む", systemImage: "folder.badge.plus") }
                 } header: { Text("このiPhoneのライブラリ") }
+                Section("冒頭の無音") {
+                    Toggle("冒頭の無音を自動スキップ", isOn: $player.autoSkipIntro)
+                    Text("初期状態はオン。先頭8秒以内のほぼ無音の部分を確認し、音の始まりの少し手前から再生します。検出できない場合は飛ばしません。オンライン曲は先頭の最大256KBを一時確認します。曲のメニューで個別調整もできます。次回の曲の開始から適用します。")
+                        .font(.caption).foregroundStyle(Palette.secondary)
+                }
                 Section("再生音量") {
                     Toggle("曲ごとの音量差を抑える", isOn: $player.normalizeVolume)
                     Text("大きい曲を−14 LUFSを目安に下げます。保存曲は初回再生前に端末内で測定し、オンライン曲は取得元の音量情報がある場合に調整します。小さい曲の増幅はしません。音源ファイルとiPhone本体の音量は変更しません。")

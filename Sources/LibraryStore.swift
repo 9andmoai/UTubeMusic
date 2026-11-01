@@ -114,6 +114,13 @@ final class LibraryStore: ObservableObject {
         guard let db, db.isFinite, (-60...60).contains(db), song(id)?.sourceLoudnessDB != db else { return }
         try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].sourceLoudnessDB = db } }
     }
+    func cacheDetectedIntro(_ id: String, seconds: Double, fileName: String?) throws {
+        guard let value = song(id), value.fileName == fileName, seconds.isFinite, (0...8).contains(seconds) else { return }
+        try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].detectedIntroSeconds = seconds } }
+    }
+    func useAutomaticIntro(_ id: String) throws {
+        try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].introSkipSeconds = nil } }
+    }
     func setIntroSkip(_ id: String, seconds: Double) throws {
         guard let song = song(id), seconds.isFinite, (0...30).contains(seconds),
               song.duration <= 0 || seconds <= max(0, song.duration - 0.5) else {
@@ -136,6 +143,7 @@ final class LibraryStore: ObservableObject {
                 var updated = song
                 updated.favorite = song.favorite || songs[i].favorite
                 updated.introSkipSeconds = song.introSkipSeconds ?? songs[i].introSkipSeconds
+                updated.detectedIntroSeconds = song.detectedIntroSeconds ?? songs[i].detectedIntroSeconds
                 songs[i] = updated
             } else { songs.insert(song, at: 0) }
             for i in playlists.indices where playlistIDs.contains(playlists[i].id) {

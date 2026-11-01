@@ -76,7 +76,7 @@ final class DownloadRemovalTests: XCTestCase {
     func testReleasingCurrentDownloadKeepsQueueAndRepeatMode() async throws {
         let store = LibraryStore(root: try folder())
         let song = try saved(store)
-        let player = PlayerStore(library: store, request: { _ in throw AppFailure("No network in test") })
+        let player = PlayerStore(library: store, introProbe: { _, _ in nil }, request: { _ in throw AppFailure("No network in test") })
         player.start([song], at: song)
         player.toggleShuffle(); player.toggleRepeat()
         let order = player.queue.order, mode = player.queue.repeatMode
