@@ -8,8 +8,13 @@ enum OnlineTiming {
     }
     static func endpoint(stream: Double?, media: Double?) -> Double? {
         let source = valid(stream), actual = valid(media)
-        if let source, let actual, abs(source-actual) <= 0.25 { return actual }
-        return source ?? actual
+        if let actual {
+            // Prefer native media timing for ordinary subsecond offsets. Only
+            // use format timing to repair a clearly overstated container length.
+            if let source, actual-source > max(1, source*0.1) { return source }
+            return actual
+        }
+        return source
     }
 }
 

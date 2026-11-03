@@ -32,6 +32,7 @@ final class PlaybackProgressTests: XCTestCase {
         XCTAssertEqual(OnlineTiming.endpoint(stream: nil, media: 391.052), 391.052)
         XCTAssertEqual(OnlineTiming.endpoint(stream: 391.05, media: 391.07), 391.07)
         XCTAssertEqual(OnlineTiming.endpoint(stream: 3.04, media: 5.97), 3.04)
+        XCTAssertEqual(OnlineTiming.endpoint(stream: 391, media: 391.8), 391.8)
     }
 }
 

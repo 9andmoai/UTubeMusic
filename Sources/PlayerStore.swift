@@ -399,7 +399,7 @@ final class PlayerStore: ObservableObject {
         // Retain the prior DASH header repair only when AAC-format timing provides
         // an independent bound and the container is demonstrably longer.
         let bound: Double? = {
-            guard let sourceAudioDuration, let media, media > sourceAudioDuration+0.25 else { return nil }
+            guard let sourceAudioDuration, let media, media-sourceAudioDuration > max(1, sourceAudioDuration*0.1) else { return nil }
             return sourceAudioDuration
         }()
         let target = bound.map { CMTime(seconds: $0, preferredTimescale: 44100) } ?? .invalid
