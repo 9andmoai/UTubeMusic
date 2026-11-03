@@ -2,7 +2,21 @@
 
 iPhoneに曲を保存し、同じアプリでお気に入り・プレイリスト・オフライン再生を扱う個人用音楽アプリ。AI機能はありません。YouTube / YouTube Music / Spotifyの公式アプリではありません。
 
-対象: iPhone 14 / 利用者申告 iOS 27.0.1。開発PC: Windows。更新日: 2026-11-01。
+対象: iPhone 14 / 利用者申告 iOS 27.0.1。開発PC: Windows。更新日: 2026-11-03。
+
+## 0.3.5：オンライン曲が終端直前で止まる問題への対応
+
+利用者画像では「スターライトパレード」がオンライン再生の6:31／6:32で止まり、4GとWi-Fiの両方で再生中の表示が残る状態。該当するYouTubeリンクは不明のため、同じ実音源を直接解析したとはしていません。
+
+従来は動画／検索の曲情報を `forwardPlaybackEndTime` に設定し、音声側の長さが判明しても、登録の長さが0でない限り表示を更新しませんでした。自然終了通知だけで曲送りを行い、通知漏れやデータ待ちで終端に到達しない場合の復旧がありませんでした。
+
+オンラインの終了位置は検索の整数秒で強制指定しません。再生アイテムの音声時間を監視し、既存の公開メタデータ取得から同じAAC形式の `approxDurationMs` も受け取ります。通常の1秒未満の差では音声側の時間を優先し、明らかに過大なコンテナ時間だけを独立したAAC時間で補正します。動画情報は長さが不明な間の表示のみに使用します。保存ファイルやライブラリ登録は変更しません。
+
+再生時間のコールバックが止まっても動く監視を追加。再生を要求していて、確認できた実終端のごく近くで2秒以上進まないときは終了処理を補助します。単に「最後の1〜2秒だから」という条件では曲送りしません。終端より手前の通信停止は12秒を目安に一度だけ音声URLを取り直し、同じ位置から再開します。再度進まなければ停止して案内し、無限に再接続しません。ユーザーの一時停止・シーク・曲変更で監視状態をリセットし、遅れて届いた終了通知で曲送りしないようにしました。通信待ちは画面にも表示します。
+
+**0.3.5のIPAを生成しました。** [成功したビルド](https://github.com/iwamoto0414yuuki-droid/UTubeMusic/actions/runs/41612491680)。ネイティブ87件・Python24件、合計111件が成功。合成したAACを実際に終端まで再生し、音声と表示時間の差、DASHの過大なコンテナ時間、自然終了からの曲送り、1曲リピート、最後の曲の停止、一時停止後の遅れた終了通知を検証しました。終了通知をテストから送らずに曲送りするケースを含みます。監視処理では、最後の1秒に未再生音声が残っているときに自動終了しないこと、無進行の復旧が1回に限られることを検証。検証済みソース `71ae40ae3bdd494a96ccfc0d6e50466e7303dd0a`。利用者の同一音源・iPhone実機での再確認は更新後に必要です。
+
+仕様参照：[Appleの終了位置指定](https://developer.apple.com/documentation/avfoundation/avplayeritem/forwardplaybackendtime)、[音声アイテムのduration](https://developer.apple.com/documentation/avfoundation/avplayeritem/duration)。
 
 ## 0.3.4：冒頭の無音を初期状態で自動スキップ
 
@@ -112,9 +126,9 @@ GitHub公式は、公開リポジトリで標準GitHub-hosted runnerを使うAct
 2. ソースの公開について利用者の同意を得る。2026-10-18に本人の承認を得て、[UTubeMusic](https://github.com/iwamoto0414yuuki-droid/UTubeMusic) にソースのみを公開しました。曲・認証情報・既存LocalTubeのデータは含めません。
 3. Actions → `Build personal iPhone app (free standard runner)` → Run workflow。
 4. シミュレーターのビルド・ネイティブテストを通してから実機用ビルドを行う。
-5. 成功時の `UTubeMusic-0.3.4-SideStore` からIPAとSHA256を取得する。失敗はログを調べて修正し、成功するまで導入用として配布しない。0.3.4のソースは `feature/intro-skip-034` ブランチです。
+5. 成功時の `UTubeMusic-0.3.5-SideStore` からIPAとSHA256を取得する。失敗はログを調べて修正し、成功するまで導入用として配布しない。0.3.5のソースは `fix/online-end-035` ブランチです。
 
-出力: `build/UTubeMusic-0.3.4-unsigned.ipa`。Windowsへ取得した配布用コピーは `release/` に保存します。これは自分のApple AccountでSideStoreが署名する前のIPAです。署名証明書・パスワード・ペアリングファイルをCIへ送る必要はありません。成果物のActions保管期限は1日なので、取得したIPAを手元に保管してください。
+出力: `build/UTubeMusic-0.3.5-unsigned.ipa`。Windowsへ取得した配布用コピーは `release/` に保存します。これは自分のApple AccountでSideStoreが署名する前のIPAです。署名証明書・パスワード・ペアリングファイルをCIへ送る必要はありません。成果物のActions保管期限は1日なので、取得したIPAを手元に保管してください。
 
 Macがある場合はXcodeとXcodeGenを用意して `bash scripts/build_ipa.sh` で同じビルドを実行できます。Windowsでは実行できません。
 
