@@ -29,6 +29,7 @@ struct EngineResponse: Decodable {
     let preview_end: Double?
     let preview_kind: String?
     let loudness_db: Double?
+    let audio_duration: Double?
 }
 
 final class PythonService {

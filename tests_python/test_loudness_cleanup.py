@@ -20,6 +20,19 @@ class LoudnessAndCleanupTests(unittest.TestCase):
         for data in [{}, None, {'playerConfig': None}]:
             self.assertIsNone(music_catalog.loudness_value(data))
 
+    def test_audio_timing_uses_only_the_matching_aac_format(self):
+        data = {'streamingData': {'adaptiveFormats': [
+            {'itag': 251, 'mimeType': 'audio/webm', 'approxDurationMs': '400000'},
+            {'itag': 140, 'mimeType': 'audio/mp4', 'approxDurationMs': '391052'}]}}
+        self.assertEqual(music_catalog.audio_duration(data, '140-drc'), 391.052)
+        self.assertIsNone(music_catalog.audio_duration(data, '141'))
+        self.assertIsNone(music_catalog.audio_duration(data, None))
+
+    def test_invalid_audio_timing_never_becomes_an_end_boundary(self):
+        for value in [None, True, 'nan', 'inf', '-1', '0', '9999999999']:
+            data = {'streamingData': {'adaptiveFormats': [{'itag':140, 'mimeType':'audio/mp4', 'approxDurationMs':value}]}}
+            self.assertIsNone(music_catalog.audio_duration(data, '140'))
+
     def test_cleanup_only_removes_cpython_regression_suite(self):
         spec = importlib.util.spec_from_file_location('embed', ROOT / 'scripts/embed_python.py')
         embed = importlib.util.module_from_spec(spec); spec.loader.exec_module(embed)

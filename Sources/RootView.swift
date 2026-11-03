@@ -64,7 +64,7 @@ struct RootView: View {
                                 SongArtwork(song: song, size: 42, radius: 6)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(song.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                                    Text(player.preparingIntro ? "冒頭の無音を確認中…" : player.preparingVolume ? "音量を確認中…" : song.artist).font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
+                                    Text(player.preparingIntro ? "冒頭の無音を確認中…" : player.preparingVolume ? "音量を確認中…" : player.buffering ? "通信待ち…" : song.artist).font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
                             }.contentShape(Rectangle())

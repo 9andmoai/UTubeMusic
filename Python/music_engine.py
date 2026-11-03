@@ -75,6 +75,7 @@ def select_audio(info):
     # No account cookies are collected or forwarded by this app.
     headers = {k: str(v) for k, v in headers.items() if k.lower() in ("user-agent", "referer", "origin", "accept", "accept-language")}
     return {"song": song(info), "url": url, "headers": headers,
+            "audio_format_id": selected.get("format_id"),
             "bytes": selected.get("filesize") or 0, "bitrate": selected.get("abr") or 0}
 
 
@@ -183,7 +184,7 @@ def dispatch(request_json):
                 info = ydl.extract_info("https://www.youtube.com/watch?v=" + ident, download=False)
             result = {"ok": True, **select_audio(info)}
             import music_catalog
-            result["loudness_db"] = music_catalog.loudness(ident)
+            result.update(music_catalog.playback_metadata(ident, result.get("audio_format_id")))
             if op == "preview":
                 result.update(preview_window(info))
             return json.dumps(result, ensure_ascii=False)

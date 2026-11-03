@@ -43,6 +43,16 @@ final class PlayerStore: ObservableObject {
     private let request: ([String: String]) async throws -> EngineResponse
     private let streamItem: (URL, [String: Any]) -> AVPlayerItem
     private let library: LibraryStore
+    @Published private(set) var buffering = false
+    private var wantsPlayback = false
+    private var playbackWatch: Task<Void, Never>?
+    private var progress = PlaybackProgress()
+    private var recoveryAttempts = 0
+    private var onlineItem: AVPlayerItem?
+    private var sourceAudioDuration: Double?
+    private var onlineDurationObservation: NSKeyValueObservation?
+    private var finishedItem: AVPlayerItem?
+    private var resumePosition: Double?
     private var timeObserver: Any?
     private var statusObservation: NSKeyValueObservation?
     private var streamTask: Task<Void, Never>?
@@ -85,7 +95,7 @@ final class PlayerStore: ObservableObject {
             Task { @MainActor in
                 guard let self, let item = note.object as? AVPlayerItem, item === self.player.currentItem,
                       self.preview.song == nil else { return }
-                self.next(automatically: true)
+                self.finishPlayback(item)
             }
         })
         notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
@@ -129,7 +139,7 @@ final class PlayerStore: ObservableObject {
         if preparingVolume { playAfterVolume = true; return }
         if seekingStart { playAfterStart = true; return }
         if needsStartPosition {
-            let offset = (library.song(current.id) ?? current).startOffset(duration: duration, automatic: autoSkipIntro)
+            let offset = resumePosition ?? (library.song(current.id) ?? current).startOffset(duration: duration, automatic: autoSkipIntro)
             if offset > 0, let item = player.currentItem {
                 if item.status != .readyToPlay {
                     waitingForStartReadiness = true; playAfterStart = true; return
@@ -151,13 +161,14 @@ final class PlayerStore: ObservableObject {
             }
             needsStartPosition = false
         }
-        if duration > 0 && elapsed >= duration - 0.1 { seek((library.song(current.id) ?? current).startOffset(duration: duration, automatic: autoSkipIntro)) }
+        if duration > 0 && elapsed >= duration - 0.005 { seek((library.song(current.id) ?? current).startOffset(duration: duration, automatic: autoSkipIntro)) }
         do {
             try AVAudioSession.sharedInstance().setActive(true)
-            player.play(); playing = true; updateNowPlaying()
+            wantsPlayback = true; finishedItem = nil
+            player.play(); playing = true; startPlaybackWatch(); updateNowPlaying()
         } catch { self.error = error.localizedDescription }
     }
-    private func pauseMain() { playAfterIntro = false; playAfterStart = false; playAfterVolume = false; player.pause(); playing = false; updateNowPlaying() }
+    private func pauseMain() { wantsPlayback = false; buffering = false; playbackWatch?.cancel(); playbackWatch = nil; progress.reset(); playAfterIntro = false; playAfterStart = false; playAfterVolume = false; player.pause(); playing = false; updateNowPlaying() }
     func pause() { streamGeneration = UUID(); streamTask?.cancel(); preview.stop(resume: false); pauseMain() }
     func toggle() {
         if preparingIntro { playAfterIntro ? pause() : play(); return }
@@ -169,7 +180,7 @@ final class PlayerStore: ObservableObject {
     func seek(_ seconds: Double) {
         preview.stop(resume: false)
         guard seconds.isFinite else { return }
-        resetStartPreparation()
+        resetStartPreparation(); progress.reset(); finishedItem = nil
         elapsed = min(max(0, seconds), max(0, duration))
         player.seek(to: CMTime(seconds: elapsed, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         updateNowPlaying()
@@ -232,13 +243,16 @@ final class PlayerStore: ObservableObject {
         if playAfterStart { play() }
     }
     private func resetStartPreparation() {
-        startSeekGeneration = UUID(); waitingForStartReadiness = false; seekingStart = false; playAfterStart = false; needsStartPosition = false
+        resumePosition = nil; startSeekGeneration = UUID(); waitingForStartReadiness = false; seekingStart = false; playAfterStart = false; needsStartPosition = false
     }
-    private func load(_ song: Song, autoplay: Bool = true) {
+    private func load(_ song: Song, autoplay: Bool = true, resumeAt: Double? = nil, recovering: Bool = false) {
+        playbackWatch?.cancel(); playbackWatch = nil; wantsPlayback = false; buffering = false; progress.reset()
+        onlineItem = nil; onlineDurationObservation = nil; sourceAudioDuration = nil; finishedItem = nil
+        if !recovering { recoveryAttempts = 0 }
         preview.stop(resume: false)
         let song = library.song(song.id) ?? song
         introTask?.cancel(); preparingIntro = false; playAfterIntro = false
-        resetStartPreparation(); needsStartPosition = true
+        resetStartPreparation(); resumePosition = resumeAt; needsStartPosition = true
         streamGeneration = UUID(); streamTask?.cancel()
         volumeTask?.cancel(); preparingVolume = false; playAfterVolume = false
         normalizedVolume = 1; player.volume = 1
@@ -347,8 +361,15 @@ final class PlayerStore: ObservableObject {
                 self.player.volume = self.normalizeVolume ? self.normalizedVolume : 1
                 try? self.library.cacheSourceLoudness(song.id, db: response.loudness_db)
                 let item = self.streamItem(url, options)
+                self.onlineItem = item; self.sourceAudioDuration = OnlineTiming.valid(response.audio_duration)
                 self.duration = response.song?.duration ?? song.duration
-                if self.duration > 0 { item.forwardPlaybackEndTime = CMTime(seconds: self.duration, preferredTimescale: 600) }
+                // Rounded video/catalog metadata must not force an audio end time.
+                self.onlineDurationObservation = item.observe(\.duration, options: [.initial, .new]) { [weak self, weak item] _, _ in
+                    Task { @MainActor in
+                        guard let self, let item, self.player.currentItem === item else { return }
+                        self.refreshOnlineTiming(item)
+                    }
+                }
                 item.preferredForwardBufferDuration = 15
                 self.player.replaceCurrentItem(with: item)
                 self.statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
@@ -356,15 +377,64 @@ final class PlayerStore: ObservableObject {
                         guard let self, self.player.currentItem === item else { return }
                         if item.status == .failed { self.pause(); self.error = "オンライン再生に失敗しました。通信を確認して再生し直してください。" }
                         else if item.status == .readyToPlay {
-                            if self.duration <= 0, item.duration.seconds.isFinite { self.duration = item.duration.seconds; self.updateNowPlaying() }
+                            self.refreshOnlineTiming(item)
                             self.finishStartReadiness()
                         }
                     }
                 }
+                self.refreshOnlineTiming(item)
                 if autoplay { self.play() }
             } catch is CancellationError {} catch {
                 guard let self, self.streamGeneration == token else { return }
                 self.playing = false; self.error = error.localizedDescription
+            }
+        }
+    }
+    private func refreshOnlineTiming(_ item: AVPlayerItem) {
+        guard item === player.currentItem, item === onlineItem else { return }
+        let media = OnlineTiming.valid(item.duration.seconds)
+        if let end = OnlineTiming.endpoint(stream: sourceAudioDuration, media: media) {
+            duration = end; current?.duration = end
+        }
+        // Retain the prior DASH header repair only when AAC-format timing provides
+        // an independent bound and the container is demonstrably longer.
+        let bound: Double? = {
+            guard let sourceAudioDuration, let media, media > sourceAudioDuration+0.25 else { return nil }
+            return sourceAudioDuration
+        }()
+        let target = bound.map { CMTime(seconds: $0, preferredTimescale: 44100) } ?? .invalid
+        if CMTimeCompare(item.forwardPlaybackEndTime, target) != 0 { item.forwardPlaybackEndTime = target }
+        updateNowPlaying()
+    }
+    private func finishPlayback(_ item: AVPlayerItem) {
+        guard item === player.currentItem, finishedItem !== item, wantsPlayback, preview.song == nil else { return }
+        finishedItem = item; next(automatically: true)
+    }
+    private func startPlaybackWatch() {
+        guard playbackWatch == nil, let item = player.currentItem else { return }
+        playbackWatch = Task { [weak self, weak item] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 500_000_000) } catch { return }
+                guard let self, let item, self.player.currentItem === item, self.wantsPlayback else { return }
+                if item === self.onlineItem { self.refreshOnlineTiming(item) }
+                self.buffering = self.player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                let endpoint = item === self.onlineItem ? OnlineTiming.endpoint(stream: self.sourceAudioDuration, media: item.duration.seconds) : OnlineTiming.valid(self.duration)
+                let action = self.progress.observe(position: item.currentTime().seconds, endpoint: endpoint,
+                    now: ProcessInfo.processInfo.systemUptime,
+                    wantsPlayback: self.wantsPlayback && !self.preparingVolume && !self.preparingIntro && !self.preparingStartPosition,
+                    recoveries: self.recoveryAttempts)
+                switch action {
+                case .finish: self.finishPlayback(item); return
+                case .recover:
+                    guard item === self.onlineItem, let song = self.current else { continue }
+                    let position = max(0, item.currentTime().seconds)
+                    self.recoveryAttempts += 1
+                    self.load(song, resumeAt: position, recovering: true); return
+                case .failed:
+                    guard item === self.onlineItem else { continue }
+                    self.pause(); self.error = "オンライン再生が進まないため停止しました。通信を確認して再生し直してください。"; return
+                case .none: break
+                }
             }
         }
     }

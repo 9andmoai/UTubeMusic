@@ -3,7 +3,7 @@ import re
 import urllib.parse
 
 
-def loudness(ident):
+def playback_metadata(ident, format_id=None):
     """Optional source reference level; failure must never block playback."""
     try:
         from ytmusicapi import YTMusic
@@ -15,9 +15,30 @@ def loudness(ident):
             session.verify = certifi.where()
             session.request = partial(session.request, timeout=3)
             data = YTMusic(requests_session=session).get_song(ident)
-            return loudness_value(data)
+            return {"loudness_db": loudness_value(data), "audio_duration": audio_duration(data, format_id)}
     except Exception:
+        return {}
+
+
+def audio_duration(data, format_id):
+    """AAC format duration in milliseconds; never use the rounded video length."""
+    import math
+    if not format_id:
         return None
+    ident = str(format_id).split("-")[0]
+    try:
+        for value in data.get("streamingData", {}).get("adaptiveFormats", []):
+            if not isinstance(value, dict) or str(value.get("itag")) != ident or not str(value.get("mimeType", "")).startswith("audio/mp4"):
+                continue
+            raw = value.get("approxDurationMs")
+            if isinstance(raw, bool):
+                continue
+            seconds = float(raw) / 1000
+            if math.isfinite(seconds) and 0 < seconds <= 86400:
+                return seconds
+    except (TypeError, ValueError, AttributeError, OverflowError):
+        pass
+    return None
 
 
 def loudness_value(data):
