@@ -9,17 +9,20 @@ struct RootView: View {
     @State private var query = ""
     @State private var searchToken = UUID()
     @StateObject private var homeCatalog: CatalogStore
-    @StateObject private var searchState = SearchScreenState()
+    @StateObject private var searchState: SearchScreenState
+    @State private var searchEditing = false
+    @State private var keyboardVisible = false
     @State private var showPlayer = false
     @State private var showDownloads = false
     @State private var showSettings = false
-    init(initialTab: Int = 0, homeCatalog: CatalogStore? = nil) {
+    init(initialTab: Int = 0, homeCatalog: CatalogStore? = nil, searchState: SearchScreenState? = nil) {
         _tab = State(initialValue: initialTab)
+        _searchState = StateObject(wrappedValue: searchState ?? SearchScreenState())
         _homeCatalog = StateObject(wrappedValue: homeCatalog ?? CatalogStore())
     }
 
     var body: some View {
-        PlayerScaffold {
+        PlayerScaffold(showsChrome: !searchEditing && !keyboardVisible) {
             // Reserve actual layout space for the player; never cover scroll content.
             NavigationStack {
                 Group {
@@ -34,6 +37,9 @@ struct RootView: View {
             }.id(tab).frame(maxWidth: .infinity, maxHeight: .infinity)
         } chrome: { bottomBar }
         .background(Palette.background)
+        .onPreferenceChange(SearchEditingPreference.self) { searchEditing = $0 }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardVisible = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardVisible = false }
         .sheet(isPresented: $showDownloads) { DownloadsView() }
         .sheet(isPresented: $showSettings) { SettingsView() }
         .fullScreenCover(isPresented: $showPlayer) { NowPlayingView() }
@@ -67,7 +73,7 @@ struct RootView: View {
                                     Text(player.preparingIntro ? "冒頭の無音を確認中…" : player.preparingVolume ? "音量を確認中…" : player.buffering ? "通信待ち…" : song.artist).font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
-                            }.contentShape(Rectangle())
+                            }.frame(minHeight: 44).contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityLabel("再生画面を開く：\(song.title)")
                         IconButton(symbol: library.song(song.id)?.favorite == true ? "heart.fill" : "heart", label: "お気に入りを切り替え", color: library.song(song.id)?.favorite == true ? Palette.accent : Palette.text, size: 19) { library.toggleFavorite(song.id) }
                         IconButton(symbol: player.playing ? "pause.fill" : "play.fill", label: player.playing ? "一時停止" : "再生") { player.toggle() }
@@ -89,7 +95,7 @@ struct RootView: View {
             VStack(spacing: 5) {
                 Image(systemName: tab == index ? selected : icon).font(.system(size: 22, weight: tab == index ? .semibold : .regular))
                 Text(title).font(.system(size: 10, weight: .semibold))
-            }.foregroundStyle(tab == index ? Palette.text : Palette.secondary).frame(maxWidth: .infinity, minHeight: 48)
+            }.foregroundStyle(tab == index ? Palette.text : Palette.secondary).frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityAddTraits(tab == index ? .isSelected : [])
     }
     private func runSearch(_ value: String) { query = value; tab = 1; searchToken = UUID() }

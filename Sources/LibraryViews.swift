@@ -35,8 +35,7 @@ struct LibraryView: View {
                     Text("ライブラリ").font(.largeTitle.bold())
                     Spacer()
                     if filter == 3 {
-                        Button(selecting ? "完了" : "選択") { selecting.toggle(); chosen = [] }
-                            .font(.subheadline.bold()).frame(minHeight: 44)
+                        TextActionButton(selecting ? "完了" : "選択") { selecting.toggle(); chosen = [] }
                             .disabled(removing || (!selecting && eligibleIDs.isEmpty))
                     } else {
                         IconButton(symbol: "plus", label: "プレイリストを作成") { name = ""; newPlaylist = true }
@@ -64,10 +63,10 @@ struct LibraryView: View {
                         HStack {
                             Text("\(chosen.count)曲を選択中").font(.subheadline.bold())
                             Spacer()
-                            Button(!eligibleIDs.isEmpty && eligibleIDs.isSubset(of: chosen) ? "選択を解除" : (text.isEmpty ? "すべて選択" : "検索結果をすべて選択")) {
+                            TextActionButton(!eligibleIDs.isEmpty && eligibleIDs.isSubset(of: chosen) ? "選択を解除" : (text.isEmpty ? "すべて選択" : "検索結果をすべて選択")) {
                                 if eligibleIDs.isSubset(of: chosen) { chosen.subtract(eligibleIDs) }
                                 else { chosen.formUnion(eligibleIDs) }
-                            }.font(.subheadline.bold()).frame(minHeight: 44).disabled(eligibleIDs.isEmpty)
+                            }.disabled(eligibleIDs.isEmpty)
                         }
                     }
                 }
@@ -81,7 +80,7 @@ struct LibraryView: View {
                             }
                             Spacer()
                             Image(systemName: "chevron.right").font(.caption).foregroundStyle(Palette.secondary)
-                        }
+                        }.contentShape(Rectangle())
                     }.buttonStyle(.plain)
                     ForEach(library.playlists) { playlist in
                         NavigationLink { PlaylistDetailView(playlistID: playlist.id) } label: {
@@ -92,7 +91,7 @@ struct LibraryView: View {
                                     Text("プレイリスト · \(playlist.songIDs.count)曲").font(.caption).foregroundStyle(Palette.secondary)
                                 }
                                 Spacer()
-                            }
+                            }.contentShape(Rectangle())
                         }.buttonStyle(.plain)
                     }
                     if filter == 2 && library.playlists.isEmpty {
@@ -148,7 +147,7 @@ struct LibraryView: View {
                             HStack {
                                 Text("\(completed) / \(total)曲を処理中").font(.caption)
                                 Spacer()
-                                Button("中止") { removalTask?.cancel() }.frame(minHeight: 44)
+                                TextActionButton("中止") { removalTask?.cancel() }
                             }
                         } else {
                             Text("お気に入り・プレイリスト・曲順は残ります").font(.caption).foregroundStyle(Palette.secondary)
@@ -197,7 +196,7 @@ struct LibraryView: View {
     private func chip(_ title: String, value: Int) -> some View {
         Button { filter = value } label: {
             Text(title).font(.system(size: 13, weight: .semibold)).padding(.horizontal, 17).frame(minHeight: 44)
-                .background(filter == value ? Palette.text : Palette.raised, in: Capsule())
+                .background(filter == value ? Palette.text : Palette.raised, in: Capsule()).contentShape(Capsule())
                 .foregroundStyle(filter == value ? Color.black : Palette.text)
         }.buttonStyle(.plain).id(value).accessibilityAddTraits(filter == value ? .isSelected : [])
     }

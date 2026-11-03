@@ -16,7 +16,7 @@ private struct PreviewControl: View {
             Group {
                 if active && preview.loading { ProgressView().tint(Palette.accent) }
                 else { Image(systemName: active ? "stop.circle.fill" : "play.circle").font(.system(size: 23)) }
-            }.foregroundStyle(Palette.accent).frame(width: 44, height: 44)
+            }.foregroundStyle(Palette.accent).frame(width: 44, height: 44).contentShape(Rectangle())
         }.buttonStyle(.plain)
             .accessibilityLabel(active ? "\(song.title)の試し聞きを停止" : "\(song.title)を15秒試し聞き")
             .accessibilityIdentifier("preview-song-" + song.id)

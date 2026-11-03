@@ -5,6 +5,45 @@ import AVFoundation
 
 @MainActor
 final class ScreenCaptureTests: XCTestCase {
+    func testKeyboardHidesChromeExpandsSuggestionsAndRestoresPlaybackControls() async throws {
+        let (library, player, music, song) = try playableLibrary()
+        defer { player.pause() }
+        let response = try JSONDecoder().decode(EngineResponse.self, from: Data(#"{"ok":true,"suggestions":["安室奈美恵","安室奈美恵 Love Story","安室奈美恵 CAN YOU CELEBRATE?","安室奈美恵 Hero"]}"#.utf8))
+        let empty = try JSONDecoder().decode(EngineResponse.self, from: Data(#"{"ok":true,"songs":[]}"#.utf8))
+        let state = SearchScreenState(suggestionRequest: { _ in response }, search: SongSearchStore { _ in empty })
+        var frames: [String: CGRect] = [:]
+        let view = RootView(initialTab: 1, searchState: state)
+            .environmentObject(library).environmentObject(player).environmentObject(music)
+            .onPreferenceChange(PlayerLayoutFrames.self) { frames = $0 }
+        try await render(view, name: "native-search-restored", prepare: { window in
+            XCTAssertGreaterThan(frames["chrome"]?.height ?? 0, 100)
+            let ready = Date().addingTimeInterval(4)
+            while !player.playing && Date() < ready { try await Task.sleep(nanoseconds: 50_000_000) }
+            XCTAssertTrue(player.playing)
+            func fields(_ view: UIView) -> [UITextField] {
+                (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let field = try XCTUnwrap(fields(window).first)
+            XCTAssertTrue(field.becomeFirstResponder())
+            state.query = "安室"
+            let deadline = Date().addingTimeInterval(4)
+            while frames["suggestion-安室奈美恵"] == nil && Date() < deadline { try await Task.sleep(nanoseconds: 50_000_000) }
+            window.layoutIfNeeded()
+            XCTAssertNil(frames["chrome"], "Typing must remove both navigation and mini player from layout")
+            let row = try XCTUnwrap(frames["suggestion-安室奈美恵"])
+            let third = try XCTUnwrap(frames["suggestion-安室奈美恵 CAN YOU CELEBRATE?"])
+            let content = try XCTUnwrap(frames["content"])
+            XCTAssertGreaterThanOrEqual(row.width, 340); XCTAssertGreaterThanOrEqual(row.height, 55)
+            XCTAssertLessThan(third.maxY, content.maxY, "At least the first three full-width choices must be visible")
+            XCTAssertEqual(player.current?.id, song.id); XCTAssertTrue(player.playing, "Hiding controls must not stop music")
+            self.capture(window, name: "native-search-keyboard", keyboard: true)
+            window.endEditing(true)
+            let restore = Date().addingTimeInterval(3)
+            while frames["chrome"] == nil && Date() < restore { try await Task.sleep(nanoseconds: 50_000_000) }
+            XCTAssertGreaterThan(frames["chrome"]?.height ?? 0, 100)
+            XCTAssertEqual(state.query, "安室"); XCTAssertEqual(player.current?.id, song.id)
+        })
+    }
     func testCaptureIntroSkip() async throws {
         let (library, player, music, song) = try playableLibrary()
         defer { player.pause() }
@@ -39,7 +78,7 @@ final class ScreenCaptureTests: XCTestCase {
         try library.save(song, playlistIDs: [])
         try await render(SongActionsSheet(song: song).environmentObject(library).environmentObject(player).environmentObject(music), name: "native-download-menu")
     }
-    private func render<V: View>(_ view: V, name: String, scrollToBottom: Bool = false, inspect: ((UIWindow) -> Void)? = nil) async throws {
+    private func render<V: View>(_ view: V, name: String, scrollToBottom: Bool = false, prepare: ((UIWindow) async throws -> Void)? = nil, inspect: ((UIWindow) -> Void)? = nil) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first { $0.isKeyWindow }
         let window = UIWindow(windowScene: scene)
@@ -47,8 +86,10 @@ final class ScreenCaptureTests: XCTestCase {
         window.overrideUserInterfaceStyle = .dark
         window.rootViewController = UIHostingController(rootView: view.preferredColorScheme(.dark).tint(Palette.accent))
         window.makeKeyAndVisible()
-        defer { window.isHidden = true; previous?.makeKey() }
+        defer { window.endEditing(true); window.isHidden = true; previous?.makeKey() }
         try await Task.sleep(nanoseconds: 1_000_000_000)
+        window.layoutIfNeeded()
+        try await prepare?(window)
         window.layoutIfNeeded()
         if scrollToBottom {
             func scrolls(_ view: UIView) -> [UIScrollView] {
@@ -69,13 +110,25 @@ final class ScreenCaptureTests: XCTestCase {
             XCTAssertGreaterThan(scroll.contentOffset.y, 0, "The actual search scroll view must move")
         }
         inspect?(window)
+        capture(window, name: name)
+    }
+    private func capture(_ window: UIWindow, name: String, keyboard: Bool = false) {
         let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
-        let image = renderer.image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+        let image = renderer.image { context in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            if keyboard, let scene = window.windowScene {
+                for overlay in scene.windows.filter({ $0 !== window && !$0.isHidden && $0.windowLevel > window.windowLevel }).sorted(by: { $0.windowLevel < $1.windowLevel }) {
+                    context.cgContext.saveGState()
+                    let origin = overlay.convert(CGPoint.zero, to: window)
+                    context.cgContext.translateBy(x: origin.x, y: origin.y)
+                    overlay.drawHierarchy(in: overlay.bounds, afterScreenUpdates: true)
+                    context.cgContext.restoreGState()
+                }
+            }
+        }
         XCTAssertGreaterThan(image.size.width, 300)
         let attachment = XCTAttachment(image: image)
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
     private func root() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

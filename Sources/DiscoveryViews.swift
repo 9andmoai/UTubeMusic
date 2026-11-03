@@ -76,7 +76,7 @@ struct SearchMoreButton: View {
                     if loading { ProgressView().tint(Palette.accent) }
                     else { Image(systemName: error == nil ? "plus.circle" : "arrow.clockwise") }
                     Text(loading ? "読み込み中…" : error == nil ? "さらに表示" : "もう一度読み込む").font(.subheadline.bold())
-                }.frame(maxWidth: .infinity, minHeight: 52).background(Palette.surface, in: Capsule())
+                }.frame(maxWidth: .infinity, minHeight: 52).background(Palette.surface, in: Capsule()).contentShape(Capsule())
             }.buttonStyle(.plain).disabled(loading).accessibilityIdentifier("load-more")
         }.padding(.vertical, 16)
     }

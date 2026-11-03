@@ -216,7 +216,7 @@ struct DownloadsView: View {
                             Text("\(music.jobs.filter(\.finished).count) / \(music.jobs.count)曲 保存完了").font(.subheadline.bold())
                             Spacer()
                             if music.jobs.contains(where: { !$0.finished && $0.error == nil }) {
-                                Button("すべて中止") { music.cancelPending() }.font(.caption).frame(minHeight: 44)
+                                TextActionButton("すべて中止", font: .caption) { music.cancelPending() }
                             }
                         }
                     }
@@ -232,9 +232,9 @@ struct DownloadsView: View {
                             }
                             if let _ = job.error {
                                 HStack {
-                                    Button("再試行") { music.retry(job.id) }.frame(minHeight: 44)
+                                    TextActionButton("再試行") { music.retry(job.id) }
                                     Spacer()
-                                    Button("閉じる") { music.dismiss(job.id) }.frame(minHeight: 44)
+                                    TextActionButton("閉じる") { music.dismiss(job.id) }
                                 }.font(.subheadline.weight(.semibold))
                             } else if job.finished {
                                 HStack {
@@ -248,7 +248,7 @@ struct DownloadsView: View {
                                 HStack {
                                     Text(job.fraction > 0 ? "\(Int(job.fraction * 100))%" : job.phase == "保存待ち" ? "順番に保存します" : "処理中").font(.caption).foregroundStyle(Palette.secondary)
                                     Spacer()
-                                    Button("キャンセル") { music.cancel(job.id) }.font(.caption).frame(minHeight: 44)
+                                    TextActionButton("キャンセル", font: .caption) { music.cancel(job.id) }
                                 }
                             }
                         }.padding(16).background(Palette.surface, in: RoundedRectangle(cornerRadius: 15))
@@ -306,7 +306,7 @@ struct SettingsView: View {
                         .font(.subheadline).foregroundStyle(Palette.secondary)
                 }
                 Section {
-                    LabeledContent("バージョン", value: "0.3.5 開発版")
+                    LabeledContent("バージョン", value: "0.3.6 開発版")
                     Text("個人用の音楽ライブラリ。曲の取得はYouTubeの仕様や制限により失敗する場合があります。")
                         .font(.caption).foregroundStyle(Palette.secondary)
                     Text("Python / yt-dlp / yt-dlp-ejs / certifi / yt-dlp-apple-webkit-jsi / ytmusicapi / requests を使用。ライセンスはアプリ内の同梱ファイル ThirdPartyNotices を参照。")

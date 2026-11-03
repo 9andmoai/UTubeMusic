@@ -22,6 +22,20 @@ struct IconButton: View {
         }.buttonStyle(.plain).accessibilityLabel(label)
     }
 }
+struct TextActionButton: View {
+    let title: String
+    var font: Font
+    let action: () -> Void
+    init(_ title: String, font: Font = .subheadline, action: @escaping () -> Void) {
+        self.title = title; self.font = font; self.action = action
+    }
+    var body: some View {
+        Button(action: action) {
+            Text(title).font(font.weight(.semibold))
+                .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+}
 struct PrimaryButton: View {
     let title: String
     var symbol: String? = nil
@@ -32,7 +46,7 @@ struct PrimaryButton: View {
                 if let symbol { Image(systemName: symbol) }
                 Text(title).fontWeight(.bold)
             }.frame(maxWidth: .infinity).padding(.vertical, 16)
-                .background(Palette.accent, in: Capsule()).foregroundStyle(Color.black)
+                .background(Palette.accent, in: Capsule()).foregroundStyle(Color.black).contentShape(Capsule())
         }.buttonStyle(.plain)
     }
 }
