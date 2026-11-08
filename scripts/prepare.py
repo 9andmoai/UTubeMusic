@@ -2,11 +2,13 @@
 from pathlib import Path
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tarfile
 import time
+import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,18 +17,31 @@ RUNTIME_ASSET = "https://api.github.com/repos/beeware/Python-Apple-support/relea
 SHA256 = "8b5cb76ef8d8a2946052479358eeec9d54b4496cb60920e175ec1489b5cf7963"
 
 
+def fetch_runtime(path, token):
+    request = urllib.request.Request(f"{RUNTIME_ASSET}?request={time.time_ns()}",
+                                     headers={"Accept": "application/octet-stream", "User-Agent": "UTubeMusic-build"})
+    if token:
+        # urllib omits unredirected headers from the signed storage request.
+        request.add_unredirected_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(request, timeout=60) as response, path.open("wb") as target:
+        shutil.copyfileobj(response, target)
+
+
 def main():
     vendor = ROOT / "vendor"
     vendor.mkdir(exist_ok=True)
     archive = vendor / "Python-3.13-iOS-support.b14.tar.gz"
     if not archive.exists():
         # Request a fresh signed redirect and keep partial downloads out of the cache.
-        request = urllib.request.Request(f"{RUNTIME_ASSET}?request={time.time_ns()}",
-                                         headers={"Accept": "application/octet-stream", "User-Agent": "UTubeMusic-build"})
         partial = archive.with_suffix(".partial")
+        token = os.environ.get("UTM_RUNTIME_TOKEN")
         try:
-            with urllib.request.urlopen(request, timeout=60) as response, partial.open("wb") as target:
-                shutil.copyfileobj(response, target)
+            try:
+                fetch_runtime(partial, token)
+            except urllib.error.HTTPError as error:
+                if not token or error.code not in (401, 403, 404):
+                    raise
+                fetch_runtime(partial, None)
             if hashlib.sha256(partial.read_bytes()).hexdigest() != SHA256:
                 raise RuntimeError("Python runtime hash mismatch; stop without extracting")
             partial.replace(archive)

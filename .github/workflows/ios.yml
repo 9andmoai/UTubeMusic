@@ -17,6 +17,8 @@ jobs:
       - name: Install project generator
         run: brew install xcodegen
       - name: Prepare pinned Python and generate project
+        env:
+          UTM_RUNTIME_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/prepare.py
           xcodegen generate
