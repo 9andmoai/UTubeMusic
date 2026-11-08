@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import UIKit
+import os
 
 struct EngineSong: Decodable {
     let id: String
@@ -36,22 +37,66 @@ struct EngineResponse: Decodable {
 
 final class PythonService {
     static let shared = PythonService()
+    private final class CachedResponse {
+        let response: EngineResponse
+        let expires: TimeInterval
+        init(_ response: EngineResponse, expires: TimeInterval) {
+            self.response = response
+            self.expires = expires
+        }
+    }
+
     private let worker = DispatchQueue(label: "local.utubemusic.python", qos: .userInitiated)
+    private let cache = NSCache<NSData, CachedResponse>()
+    private let call: (String) throws -> String
+    private let now: () -> TimeInterval
+
+    init(call: @escaping (String) throws -> String = { text in
+        guard let path = Bundle.main.resourcePath else { throw AppFailure("音声取得エンジンを読み込めません。") }
+        return try MusicPythonBridge.call(text, resourcePath: path)
+    }, now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+        self.call = call
+        self.now = now
+        cache.countLimit = 128
+        cache.totalCostLimit = 8 * 1024 * 1024
+    }
+
     func request(_ values: [String: String]) async throws -> EngineResponse {
-        let data = try JSONSerialization.data(withJSONObject: values)
-        let text = String(decoding: data, as: UTF8.self)
-        return try await withCheckedThrowingContinuation { continuation in
-            worker.async {
-                do {
-                    guard let path = Bundle.main.resourcePath else {
-                        throw AppFailure("音声取得エンジンを読み込めません。")
-                    }
-                    let output = try MusicPythonBridge.call(text, resourcePath: path)
-                    let response = try JSONDecoder().decode(EngineResponse.self, from: Data(output.utf8))
-                    guard response.ok else { throw AppFailure(response.error ?? "曲を取得できませんでした。") }
-                    continuation.resume(returning: response)
-                } catch { continuation.resume(throwing: error) }
+        let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
+        let key = data as NSData
+        let lifetime: TimeInterval
+        switch values["op"] {
+        case "suggestions", "search", "catalog_search": lifetime = 180
+        case "home", "collection": lifetime = 900
+        case "lyrics": lifetime = 3600
+        default: lifetime = 0
+        }
+        let skipIfCancelled = values["op"] == "suggestions" || values["op"] == "lyrics"
+        let cancelled = OSAllocatedUnfairLock(initialState: false)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                worker.async {
+                    do {
+                        if skipIfCancelled, cancelled.withLock({ $0 }) { throw CancellationError() }
+                        if lifetime > 0, let cached = self.cache.object(forKey: key), cached.expires > self.now() {
+                            continuation.resume(returning: cached.response)
+                            return
+                        }
+                        let output = try self.call(String(decoding: data, as: UTF8.self))
+                        let response = try JSONDecoder().decode(EngineResponse.self, from: Data(output.utf8))
+                        guard response.ok else { throw AppFailure(response.error ?? "曲を取得できませんでした。") }
+                        // Stream URLs and their headers expire and must be resolved afresh.
+                        if lifetime > 0, response.url == nil, response.headers == nil {
+                            let ttl = values["op"] == "lyrics" && response.lyrics == nil ? 180 : lifetime
+                            self.cache.setObject(CachedResponse(response, expires: self.now() + ttl),
+                                                 forKey: key, cost: data.count + output.utf8.count)
+                        }
+                        continuation.resume(returning: response)
+                    } catch { continuation.resume(throwing: error) }
+                }
             }
+        } onCancel: {
+            if skipIfCancelled { cancelled.withLock { $0 = true } }
         }
     }
 }
@@ -197,7 +242,7 @@ final class MusicService: ObservableObject {
             }
             if let thumbnail = metadata.thumbnail, let url = URL(string: thumbnail), url.scheme == "https" {
                 // Artwork failure must not prevent listening. Cache it for offline use.
-                artworkName = await cacheArtwork(url, id: job.song.id)
+                artworkName = await cacheArtwork(url)
             }
             try Task.checkCancellation()
             var song = metadata.song
@@ -215,12 +260,10 @@ final class MusicService: ObservableObject {
             update(id) { $0.error = error is CancellationError || (error as? URLError)?.code == .cancelled ? "保存をキャンセルしました" : error.localizedDescription }
         }
     }
-    private func cacheArtwork(_ url: URL, id: String) async -> String? {
+    private func cacheArtwork(_ url: URL) async -> String? {
         do {
-            var request = URLRequest(url: url); request.timeoutInterval = 12
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let response = response as? HTTPURLResponse, response.statusCode == 200,
-                  data.count < 8_000_000, let image = UIImage(data: data), let jpg = image.jpegData(compressionQuality: 0.85) else { return nil }
+            guard let data = await ArtworkCache.shared.data(for: url),
+                  let image = UIImage(data: data), let jpg = image.jpegData(compressionQuality: 0.85) else { return nil }
             let name = UUID().uuidString + ".jpg"
             try jpg.write(to: library.root.appendingPathComponent(name), options: .atomic)
             return name

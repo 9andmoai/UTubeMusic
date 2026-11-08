@@ -1,11 +1,21 @@
 """Public YouTube Music metadata. No Google login, cookies from users, or paid API."""
+from collections import OrderedDict
 import re
+import time
 import unicodedata
 import urllib.parse
 
 
+_playback_metadata_cache = OrderedDict()
+
+
 def playback_metadata(ident, format_id=None):
-    """Optional source reference level; failure must never block playback."""
+    """Reuse timing and loudness, never the signed stream URLs."""
+    key = (ident, format_id)
+    cached = _playback_metadata_cache.pop(key, None)
+    if cached and cached[0] > time.monotonic():
+        _playback_metadata_cache[key] = cached
+        return cached[1].copy()
     try:
         from ytmusicapi import YTMusic
         import requests
@@ -16,7 +26,12 @@ def playback_metadata(ident, format_id=None):
             session.verify = certifi.where()
             session.request = partial(session.request, timeout=3)
             data = YTMusic(requests_session=session).get_song(ident)
-            return {"loudness_db": loudness_value(data), "audio_duration": audio_duration(data, format_id)}
+            result = {"loudness_db": loudness_value(data), "audio_duration": audio_duration(data, format_id)}
+            if any(value is not None for value in result.values()):
+                _playback_metadata_cache[key] = (time.monotonic() + 3600, result)
+                if len(_playback_metadata_cache) > 128:
+                    _playback_metadata_cache.popitem(last=False)
+            return result.copy()
     except Exception:
         return {}
 

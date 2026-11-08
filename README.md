@@ -4,6 +4,10 @@ iPhoneに曲を保存し、同じアプリでお気に入り・プレイリス�
 
 対象: iPhone 14 / 利用者申告 iOS 27.0.1。開発PC: Windows。更新日: 2026-11-03。
 
+## 0.3.10：通信量の削減
+
+歌詞・検索結果・検索候補・アルバムなどの情報をメモリで一時的に再利用します。ジャケットの取得を画面間で共有し、HTTPキャッシュを利用します。オンライン再生の先読み設定を短縮し、同じ音源の冒頭解析結果を再利用します。保存済み音源はローカルを優先し、音声の自動ダウンロードは行いません。
+
 ## 0.3.9：年齢確認が必要な動画と公式音源
 
 オンライン再生でYouTubeから年齢確認を求められた場合、YouTube Musicで同じ曲の公式音源を探します。元の曲IDで再生キューやライブラリを管理し、歌詞と再生時間は実際に再生する音源を使います。確実に照合できない場合は年齢確認が必要な旨を表示します。
@@ -148,9 +152,9 @@ GitHub公式は、公開リポジトリで標準GitHub-hosted runnerを使うAct
 2. ソースの公開について利用者の同意を得る。2026-10-18に本人の承認を得て、[UTubeMusic](https://github.com/iwamoto0414yuuki-droid/UTubeMusic) にソースのみを公開しました。曲・認証情報・既存LocalTubeのデータは含めません。
 3. Actions → `Build personal iPhone app (free standard runner)` → Run workflow。
 4. シミュレーターのビルド・ネイティブテストを通してから実機用ビルドを行う。
-5. 成功時の `UTubeMusic-0.3.9-SideStore` からIPAとSHA256を取得する。失敗はログを調べて修正し、成功するまで導入用として配布しない。0.3.9のソースは `fix/official-audio-039` ブランチです。
+5. 成功時の `UTubeMusic-0.3.10-SideStore` からIPAとSHA256を取得する。失敗はログを調べて修正し、成功するまで導入用として配布しない。0.3.10のソースは `perf/reduce-data-0310` ブランチです。
 
-出力: `build/UTubeMusic-0.3.9-unsigned.ipa`。Windowsへ取得した配布用コピーは `release/` に保存します。これは自分のApple AccountでSideStoreが署名する前のIPAです。署名証明書・パスワード・ペアリングファイルをCIへ送る必要はありません。成果物のActions保管期限は1日なので、取得したIPAを手元に保管してください。
+出力: `build/UTubeMusic-0.3.10-unsigned.ipa`。Windowsへ取得した配布用コピーは `release/` に保存します。これは自分のApple AccountでSideStoreが署名する前のIPAです。署名証明書・パスワード・ペアリングファイルをCIへ送る必要はありません。成果物のActions保管期限は1日なので、取得したIPAを手元に保管してください。
 
 Macがある場合はXcodeとXcodeGenを用意して `bash scripts/build_ipa.sh` で同じビルドを実行できます。Windowsでは実行できません。
 

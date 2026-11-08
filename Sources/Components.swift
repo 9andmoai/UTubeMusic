@@ -60,7 +60,7 @@ struct SongArtwork: View {
             if let url = library.file(song?.artworkName), let image = UIImage(contentsOfFile: url.path) {
                 Image(uiImage: image).resizable().scaledToFill()
             } else if let thumbnail = song?.thumbnail, let url = URL(string: thumbnail) {
-                AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { placeholder }
+                ArtworkImage(url: url) { placeholder }
             } else { placeholder }
         }.frame(width: size, height: size).clipped().clipShape(RoundedRectangle(cornerRadius: radius))
             .accessibilityHidden(true)

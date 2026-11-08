@@ -35,7 +35,7 @@ struct CatalogArtwork: View {
     var body: some View {
         Group {
             if let value = item.thumbnail, let url = URL(string: value) {
-                AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { placeholder }
+                ArtworkImage(url: url) { placeholder }
             } else { placeholder }
         }.frame(width: size, height: size).clipped().clipShape(RoundedRectangle(cornerRadius: item.kind == "album" ? 5 : 12)).accessibilityHidden(true)
     }

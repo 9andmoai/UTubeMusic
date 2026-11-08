@@ -45,6 +45,7 @@ final class PlayerStore: ObservableObject {
     var playbackButtonLabel: String { playbackButtonSymbol == "pause.fill" ? "一時停止" : "再生" }
     @Published private(set) var alternateAudioID: String?
     private var alternateIntroOffset: Double?
+    private let recentIntroOffsets = NSCache<NSString, NSNumber>()
     var lyricsSongID: String? {
         guard !resolvingOnline, let current, current.hasYouTubeSource else { return nil }
         return alternateAudioID ?? current.id
@@ -88,6 +89,7 @@ final class PlayerStore: ObservableObject {
          introProbe: @escaping (URL, [String: String]) async -> Double? = { await IntroSilence.remote($0, headers: $1) },
          request: @escaping ([String: String]) async throws -> EngineResponse = { try await PythonService.shared.request($0) },
          streamItem: @escaping (URL, [String: Any]) -> AVPlayerItem = { AVPlayerItem(asset: AVURLAsset(url: $0, options: $1)) }) {
+        recentIntroOffsets.countLimit = 128
         self.introProbe = introProbe
         self.request = request; self.streamItem = streamItem
         self.library = library
@@ -404,9 +406,16 @@ final class PlayerStore: ObservableObject {
                 let usesAlternate = alternate != nil
                 if self.autoSkipIntro, usesAlternate || (song.introSkipSeconds == nil && song.detectedIntroSeconds == nil) {
                     self.preparingIntro = true
-                    let result = await self.introProbe(url, response.headers ?? [:])
+                    let source = (alternate ?? song.id) as NSString
+                    let result: Double?
+                    if let cached = self.recentIntroOffsets.object(forKey: source) {
+                        result = cached.doubleValue
+                    } else {
+                        result = await self.introProbe(url, response.headers ?? [:])
+                    }
                     guard !Task.isCancelled, self.streamGeneration == token else { return }
                     if let result, result.isFinite, (0...8).contains(result) {
+                        self.recentIntroOffsets.setObject(NSNumber(value: result), forKey: source)
                         if usesAlternate {
                             self.alternateIntroOffset = result
                         } else {
@@ -438,7 +447,7 @@ final class PlayerStore: ObservableObject {
                         self.refreshOnlineTiming(item)
                     }
                 }
-                item.preferredForwardBufferDuration = 15
+                item.preferredForwardBufferDuration = 8
                 self.player.replaceCurrentItem(with: item)
                 self.statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
                     Task { @MainActor in
