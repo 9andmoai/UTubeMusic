@@ -19,6 +19,8 @@ struct Song: Identifiable, Codable, Equatable {
     var introSkipSeconds: Double? = nil
     var detectedIntroSeconds: Double? = nil
 
+    var hasYouTubeSource: Bool { id.range(of: "^[A-Za-z0-9_-]{11}$", options: .regularExpression) != nil }
+
     func startOffset(duration actual: Double? = nil, automatic: Bool = true) -> Double {
         guard let value = introSkipSeconds ?? (automatic ? detectedIntroSeconds : nil), value.isFinite, value > 0 else { return 0 }
         let length = actual ?? duration

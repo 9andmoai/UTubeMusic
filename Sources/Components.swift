@@ -115,6 +115,7 @@ struct SongRow: View {
     var trailing = "ellipsis"
     var trailingLabel: String? = nil
     var allowsPreview = false
+    var actionLabel: String? = nil
     let action: () -> Void
     let more: () -> Void
     @EnvironmentObject private var player: PlayerStore
@@ -129,7 +130,7 @@ struct SongRow: View {
                     }
                     Spacer(minLength: 0)
                 }.contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain).accessibilityLabel(actionLabel ?? "\(song.title)、\(subtitle ?? song.artist)")
             if allowsPreview { PreviewButton(song: song) }
             IconButton(symbol: trailing, label: trailingLabel ?? (trailing == "arrow.down.circle" ? "\(song.title)を保存" : "\(song.title)のメニュー"), action: more)
         }.padding(.vertical, 6)

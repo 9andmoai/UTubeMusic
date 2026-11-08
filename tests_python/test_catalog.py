@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import types
 import sys
 
@@ -37,6 +37,26 @@ class CatalogTests(unittest.TestCase):
             def get_playlist(self, ident, limit):
                 return {"title": "Original", "tracks": tracks or [], "trackCount": count or len(tracks or [])}
         return patch.dict(sys.modules, {"requests": types.SimpleNamespace(Session=Session), "certifi": types.SimpleNamespace(where=lambda: "ca.pem"), "ytmusicapi": types.SimpleNamespace(YTMusic=API)})
+
+    def test_lyrics_require_the_exact_recording_and_preserve_timing(self):
+        line = types.SimpleNamespace(text="Demo", start_time=1250, end_time=2000)
+        invalid = types.SimpleNamespace(text="Skip", start_time=2000, end_time=1000)
+        ident = "01234567890"
+        api = Mock()
+        api.get_watch_playlist.return_value = {"tracks": [{"videoId": "different01"}], "lyrics": "MPLYt_demo"}
+        self.assertIsNone(catalog.song_lyrics(api, ident))
+        api.get_lyrics.assert_not_called()
+        api.get_watch_playlist.return_value["tracks"][0]["videoId"] = ident
+        api.get_lyrics.return_value = {"lyrics": [invalid, line], "hasTimestamps": True, "source": "Demo source"}
+        self.assertEqual(catalog.song_lyrics(api, ident),
+                         {"lines": [{"text": "Demo", "start": 1.25, "end": 2.0}], "source": "Demo source"})
+        api.get_lyrics.assert_called_once_with("MPLYt_demo", timestamps=True)
+
+    def test_lyrics_with_no_timing_are_returned_as_text(self):
+        api = Mock()
+        api.get_watch_playlist.return_value = {"tracks": [{"videoId": "01234567890"}], "lyrics": "MPLYt_demo"}
+        api.get_lyrics.return_value = {"lyrics": "Demo", "hasTimestamps": False}
+        self.assertEqual(catalog.song_lyrics(api, "01234567890"), {"text": "Demo", "source": None})
 
     def test_public_home_filters_artists_and_deduplicates(self):
         with self.fake(): result = catalog.dispatch({"op": "home"})

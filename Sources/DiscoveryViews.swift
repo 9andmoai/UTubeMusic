@@ -98,10 +98,16 @@ struct SongSearchResults: View {
                     let available = existing.map(library.isPlayable) ?? false
                     if let destination, let existing, available {
                         DestinationSongRow(song: existing, destination: destination)
+                    } else if destination != nil {
+                        SongRow(song: song, trailing: "plus.circle", trailingLabel: "\(song.title)を追加") {
+                            save = song
+                        } more: { save = song }
                     } else {
-                    SongRow(song: song, subtitle: song.artist + (song.duration > 0 ? " · " + song.timeLabel : ""), trailing: available ? "ellipsis" : "plus.circle", allowsPreview: true) {
-                        if let existing, available { player.start([existing], at: existing) } else { save = song }
-                    } more: { if let existing, available { menu = existing } else { save = song } }
+                        SongRow(song: existing ?? song, actionLabel: "\(song.title)を再生") {
+                            player.start(search.results, at: song, fromSearch: true)
+                        } more: {
+                            if let existing { menu = existing } else { save = song }
+                        }
                     }
                 }
                 if search.hasMore {
@@ -111,8 +117,6 @@ struct SongSearchResults: View {
                 } else { Text("ここまで\(search.results.count)曲を表示").font(.caption).foregroundStyle(Palette.secondary).padding(.vertical, 22) }
             }
         }.sheet(item: $save) { SaveSongSheet(song: $0, initialPlaylistIDs: destination?.initialPlaylistIDs ?? []) }.sheet(item: $menu) { SongActionsSheet(song: $0) }
-            .onDisappear { player.preview.stop() }
-            .onChange(of: save?.id) { _, value in if value != nil { player.preview.stop() } }
     }
 }
 struct CatalogSearchResults: View {

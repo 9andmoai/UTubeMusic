@@ -70,13 +70,13 @@ struct RootView: View {
                                 SongArtwork(song: song, size: 42, radius: 6)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(song.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                                    Text(player.preparingIntro ? "冒頭の無音を確認中…" : player.preparingVolume ? "音量を確認中…" : player.buffering ? "通信待ち…" : song.artist).font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
+                                    Text(player.preparingIntro ? "冒頭の無音を確認中…" : player.preparingVolume ? "音量を確認中…" : player.resolvingOnline ? "再生を準備中…" : player.buffering ? "通信待ち…" : song.artist).font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
                             }.frame(minHeight: 44).contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityLabel("再生画面を開く：\(song.title)")
-                        IconButton(symbol: library.song(song.id)?.favorite == true ? "heart.fill" : "heart", label: "お気に入りを切り替え", color: library.song(song.id)?.favorite == true ? Palette.accent : Palette.text, size: 19) { library.toggleFavorite(song.id) }
-                        IconButton(symbol: player.playing ? "pause.fill" : "play.fill", label: player.playing ? "一時停止" : "再生") { player.toggle() }
+                        IconButton(symbol: library.song(song.id)?.favorite == true ? "heart.fill" : "heart", label: "お気に入りを切り替え", color: library.song(song.id)?.favorite == true ? Palette.accent : Palette.text, size: 19) { library.toggleFavorite(song) }
+                        IconButton(symbol: player.playbackButtonSymbol, label: player.playbackButtonLabel) { player.toggle() }
                     }.padding(.horizontal, 9).padding(.vertical, 7)
                     GeometryReader { geo in
                         Rectangle().fill(Palette.accent).frame(width: geo.size.width * min(1, max(0, player.elapsed / max(1, player.duration))))

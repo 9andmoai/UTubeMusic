@@ -100,6 +100,32 @@ def collection_ref(value):
     return value
 
 
+def song_lyrics(api, ident):
+    if not isinstance(ident, str) or not re.fullmatch(r"[A-Za-z0-9_-]{11}", ident):
+        raise ValueError("YouTubeの曲を選んでください。")
+    watch = api.get_watch_playlist(videoId=ident, limit=1)
+    tracks = watch.get("tracks") or []
+    key = watch.get("lyrics")
+    # The endpoint can substitute a different recording. Its timing is not interchangeable.
+    if not tracks or tracks[0].get("videoId") != ident or not key:
+        return None
+    result = api.get_lyrics(key, timestamps=True)
+    if not result:
+        return None
+    raw = result.get("lyrics")
+    source = result.get("source")
+    if not result.get("hasTimestamps"):
+        return {"text": raw.strip(), "source": source} if isinstance(raw, str) and raw.strip() else None
+
+    lines = []
+    for line in raw[:1000]:
+        if 0 <= line.start_time < line.end_time <= 86_400_000 and line.text.strip():
+            lines.append({"text": line.text, "start": line.start_time / 1000, "end": line.end_time / 1000})
+    if not lines:
+        return None
+    return {"lines": sorted(lines, key=lambda line: line["start"]), "source": source}
+
+
 def dispatch(request):
     from ytmusicapi import YTMusic
     import certifi
@@ -108,11 +134,13 @@ def dispatch(request):
     with requests.Session() as session:
         session.trust_env = False
         session.verify = certifi.where()
-        session.request = partial(session.request, timeout=20)
         op = request["op"]
+        session.request = partial(session.request, timeout=5 if op == "lyrics" else 20)
         # The pinned parser currently misses filtered search shelves in Japanese.
         # Keep home headings Japanese; English metadata parsing preserves song titles.
         api = YTMusic(requests_session=session, language="ja" if op == "home" else "en", location="JP")
+        if op == "lyrics":
+            return {"ok": True, "lyrics": song_lyrics(api, request.get("id"))}
         if op == "suggestions":
             query = str(request.get("query", "")).strip()[:100]
             return {"ok": True, "suggestions": api.get_search_suggestions(query)[:8] if query and "://" not in query else []}

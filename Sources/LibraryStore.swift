@@ -190,6 +190,11 @@ final class LibraryStore: ObservableObject {
         try commit { if let i = playlists.firstIndex(where: { $0.id == id }) { playlists[i].name = String(name.prefix(100)) } }
     }
     func deletePlaylist(_ id: UUID) throws { try commit { playlists.removeAll { $0.id == id } } }
+    func toggleFavorite(_ song: Song) {
+        if self.song(song.id) != nil { toggleFavorite(song.id); return }
+        do { try addOnline(song, favorite: true, playlistIDs: []) }
+        catch { message = error.localizedDescription }
+    }
     func toggleFavorite(_ id: String) {
         do { try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].favorite.toggle() } } }
         catch { message = error.localizedDescription }

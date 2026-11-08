@@ -38,7 +38,7 @@ final class PlaybackProgressTests: XCTestCase {
 
 @MainActor
 final class OnlineEndTests: XCTestCase {
-    private func setup(_ kind: String = "regular", count: Int = 2) async throws -> (LibraryStore, PlayerStore, [Song], URL, Double, () -> [AVPlayerItem]) {
+    private func setup(_ kind: String = "regular", count: Int = 2, saved: Bool = true) async throws -> (LibraryStore, PlayerStore, [Song], URL, Double, () -> [AVPlayerItem]) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let library = LibraryStore(root: root)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -48,7 +48,7 @@ final class OnlineEndTests: XCTestCase {
         try XCTUnwrap(values[kind].flatMap { Data(base64Encoded: $0) }).write(to: fixture)
         let realDuration = try await AudioTiming.read(fixture).duration
         let songs = (1...count).map { Song(id: String(format: "%011d", $0), title: "Track \($0)", artist: "Test", duration: 4) }
-        for song in songs { try library.addOnline(song, favorite: true, playlistIDs: []) }
+        if saved { for song in songs { try library.addOnline(song, favorite: true, playlistIDs: []) } }
         var items: [AVPlayerItem] = []
         let response: EngineResponse = try JSONDecoder().decode(EngineResponse.self, from: JSONSerialization.data(withJSONObject: [
             "ok": true, "url": "https://r1.googlevideo.com/test", "audio_duration": realDuration]))
@@ -75,6 +75,22 @@ final class OnlineEndTests: XCTestCase {
         XCTAssertEqual(library.favorites.count, 2); XCTAssertTrue(library.songs.allSatisfy { $0.fileName == nil })
         XCTAssertEqual(try Data(contentsOf: fixture), bytes)
     }
+    func testSearchStreamsUnsavedTracksThroughTheirRealEndWithoutSaving() async throws {
+        let (library, player, songs, _, actual, items) = try await setup(saved: false)
+        defer { player.pause() }
+        player.start(songs, at: songs[0], fromSearch: true)
+        try await wait { player.playing && items().last?.status == .readyToPlay }
+        XCTAssertTrue(player.searchPlayback)
+        XCTAssertEqual(player.queuedSong(songs[1].id)?.title, songs[1].title)
+        XCTAssertTrue(library.songs.isEmpty)
+        player.seek(actual - 0.25)
+        try await wait { player.current?.id == songs[1].id && player.playing }
+        XCTAssertTrue(library.songs.isEmpty)
+        library.toggleFavorite(songs[1])
+        XCTAssertEqual(library.favorites.map(\.id), [songs[1].id])
+        XCTAssertNil(library.song(songs[1].id)?.fileName)
+    }
+
     func testDASHMismatchReachesRealEndAndRepeatOneReloadsSameSong() async throws {
         let (_, player, songs, _, actual, items) = try await setup("dash_nonzero_headers")
         defer { player.pause() }

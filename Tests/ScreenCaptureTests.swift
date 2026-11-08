@@ -44,6 +44,25 @@ final class ScreenCaptureTests: XCTestCase {
             XCTAssertEqual(state.query, "安室"); XCTAssertEqual(player.current?.id, song.id)
         })
     }
+    func testCaptureSyncedLyrics() async throws {
+        let (library, player, music, song) = try playableLibrary()
+        defer { player.pause() }
+        let fixture = Song(id: "01234567890", title: "Midnight Signals", artist: "UTube Music Demo", duration: song.duration, fileName: song.fileName, audioTimingVersion: 1)
+        try library.save(fixture, playlistIDs: [])
+        player.start([fixture], at: fixture)
+        let response = try JSONDecoder().decode(EngineResponse.self, from: Data(#"{"ok":true,"lyrics":{"source":"画面確認用の歌詞","lines":[{"text":"夜の街に灯がともる","start":0,"end":5},{"text":"窓の向こうを見上げて","start":5,"end":10},{"text":"新しい風を待つ","start":10,"end":13},{"text":"静かな空へ手を伸ばす","start":16,"end":19},{"text":"朝が来るまで歩いていこう","start":19,"end":23}]}}"#.utf8))
+        let lyrics = try XCTUnwrap(response.lyrics)
+        XCTAssertEqual(lyrics.activeLine(at: 10), 2)
+        XCTAssertNil(lyrics.activeLine(at: 14))
+        XCTAssertEqual(lyrics.activeLine(at: 5), 1)
+        let view = LyricsView(request: { _ in response }).environmentObject(library).environmentObject(player).environmentObject(music)
+        try await render(view, name: "native-lyrics", prepare: { _ in
+            player.pause()
+            player.seek(11)
+            try await Task.sleep(nanoseconds: 450_000_000)
+            XCTAssertEqual(lyrics.activeLine(at: player.elapsed), 2)
+        })
+    }
     func testCaptureIntroSkip() async throws {
         let (library, player, music, song) = try playableLibrary()
         defer { player.pause() }

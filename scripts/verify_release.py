@@ -65,7 +65,7 @@ def main():
     report = {"version": version, "bundle_id": info["CFBundleIdentifier"], "platform": "iphoneos",
               "architecture": "arm64", "sha256": digest, "bytes": len(ipa_bytes), "frameworks": len(frameworks),
               "background_audio": True, "signed_for_device": False, "physical_iPhone_tested": False,
-              "native_tests": native_tests, "python_tests": 24, "native_test_result": "passed",
+              "native_tests": native_tests, "python_tests": 26, "native_test_result": "passed",
               "ci_run": f"https://github.com/iwamoto0414yuuki-droid/UTubeMusic/actions/runs/{args.run}",
               "source_commit": args.commit}
     text = json.dumps(report, indent=2) + "\n"
