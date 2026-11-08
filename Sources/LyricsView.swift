@@ -148,8 +148,10 @@ struct LyricsView: View {
                 }
             }.padding(.horizontal, 14)
             if let song = player.current, song.hasYouTubeSource {
-                TrackLyricsView(state: lyrics.state(for: song.id), retry: { lyrics.load(song.id, retry: true) })
-                    .id(song.id)
+                let source = player.lyricsSongID
+                TrackLyricsView(state: source.map { lyrics.state(for: $0) } ?? .loading,
+                                retry: { lyrics.load(source, retry: true) })
+                    .id(source ?? song.id)
             } else {
                 EmptyPanel(symbol: "quote.bubble", title: "歌詞がありません", detail: "歌詞を取得できる曲を再生してください。")
                     .frame(maxHeight: .infinity)

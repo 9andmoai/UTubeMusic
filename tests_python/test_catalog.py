@@ -58,6 +58,30 @@ class CatalogTests(unittest.TestCase):
         api.get_lyrics.return_value = {"lyrics": "Demo", "hasTimestamps": False}
         self.assertEqual(catalog.song_lyrics(api, "01234567890"), {"text": "Demo", "source": None})
 
+    def test_official_audio_uses_catalog_identity_and_rejects_ambiguous_editions(self):
+        api = Mock()
+        source = {"videoId": "AbCdEf123_-", "title": "Song", "length": "4:36",
+                  "videoType": "MUSIC_VIDEO_TYPE_OMV", "artists": [{"id": "artist-id", "name": "Artist"}]}
+        api.get_watch_playlist.return_value = {"tracks": [source]}
+        official = {"videoId": "official123", "title": "Ｓｏｎｇ", "duration_seconds": 262,
+                    "videoType": "MUSIC_VIDEO_TYPE_ATV", "album": {"id": "album"}, "artists": source["artists"]}
+        cover = {**official, "videoId": "cover123456", "artists": [{"id": "cover-id", "name": "Artist"}]}
+        live = {**official, "videoId": "live1234567", "title": "Song (Live)"}
+        distant = {**official, "videoId": "other123456", "duration_seconds": 90}
+        api.search.return_value = [cover, live, distant, official]
+        self.assertEqual(catalog.official_audio_candidate(api, source["videoId"]), official["videoId"])
+        api.search.return_value.append({**official, "videoId": "other123456", "duration_seconds": 281})
+        self.assertIsNone(catalog.official_audio_candidate(api, source["videoId"]))
+
+    def test_official_audio_prefers_a_catalog_counterpart_for_the_exact_source(self):
+        api = Mock()
+        source = {"videoId": "AbCdEf123_-", "videoType": "MUSIC_VIDEO_TYPE_OMV",
+                  "counterpart": {"videoId": "official123", "videoType": "MUSIC_VIDEO_TYPE_ATV"}}
+        api.get_watch_playlist.return_value = {"tracks": [source]}
+        self.assertEqual(catalog.official_audio_candidate(api, source["videoId"]), "official123")
+        self.assertIsNone(catalog.official_audio_candidate(api, "different01"))
+        api.search.assert_not_called()
+
     def test_public_home_filters_artists_and_deduplicates(self):
         with self.fake(): result = catalog.dispatch({"op": "home"})
         self.assertEqual(len(result["sections"][0]["items"]), 1)

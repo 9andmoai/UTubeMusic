@@ -30,6 +30,7 @@ struct EngineResponse: Decodable {
     let preview_kind: String?
     let loudness_db: Double?
     let audio_duration: Double?
+    let audio_source_id: String?
     let lyrics: TrackLyrics?
 }
 
@@ -113,7 +114,7 @@ final class MusicService: ObservableObject {
         guard !library.recoveryNeeded else { library.message = "ライブラリの復元が必要です。"; return }
         repairing = true
         defer { repairing = false; scheduleNext() }
-        let candidates = library.songs.filter { !$0.id.hasPrefix("local-") && $0.audioTimingVersion != 1 }
+        let candidates = library.songs.filter { $0.hasYouTubeSource && $0.fileName != nil && $0.audioTimingVersion != 1 }
         var repaired = 0
         var failures: [String] = []
         for (index, song) in candidates.enumerated() {
@@ -182,7 +183,7 @@ final class MusicService: ObservableObject {
             try Task.checkCancellation()
             guard let urlString = response.url, let url = URL(string: urlString),
                   url.scheme == "https", let host = url.host, host.hasSuffix(".googlevideo.com"),
-                  let metadata = response.song else { throw AppFailure("音声の保存先を確認できませんでした。") }
+                  let metadata = response.song, metadata.id == job.song.id else { throw AppFailure("音声の保存先を確認できませんでした。") }
             update(id) { $0.phase = "曲を保存中" }
             try await AudioTransfer.download(url: url, headers: response.headers ?? [:], expected: response.bytes ?? 0, to: destination) { [weak self] progress in
                 Task { @MainActor in self?.update(id) { $0.fraction = progress } }

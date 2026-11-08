@@ -54,10 +54,10 @@ jobs:
         run: bash scripts/build_ipa.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: UTubeMusic-0.3.8-SideStore
+          name: UTubeMusic-0.3.9-SideStore
           path: |
-            build/UTubeMusic-0.3.8-unsigned.ipa
-            build/UTubeMusic-0.3.8-unsigned.ipa.sha256
+            build/UTubeMusic-0.3.9-unsigned.ipa
+            build/UTubeMusic-0.3.9-unsigned.ipa.sha256
             build/native-*.png
             build/native-tests.log
           retention-days: 1

@@ -1,5 +1,6 @@
 """Public YouTube Music metadata. No Google login, cookies from users, or paid API."""
 import re
+import unicodedata
 import urllib.parse
 
 
@@ -98,6 +99,67 @@ def collection_ref(value):
     if not re.fullmatch(r"(?:MPRE|PL|OLAK|RD)[A-Za-z0-9_-]{1,196}", value):
         raise ValueError("公開プレイリスト・アルバムのリンクを確認してください。")
     return value
+
+
+def normalized_title(value):
+    return " ".join(unicodedata.normalize("NFKC", value or "").casefold().split())
+
+
+def artist_ids(track):
+    artists = track.get("artists") or []
+    return {artist["id"] for artist in artists} if artists and all(artist.get("id") for artist in artists) else set()
+
+
+def official_audio_candidate(api, ident):
+    tracks = api.get_watch_playlist(videoId=ident, limit=1).get("tracks") or []
+    if not tracks or tracks[0].get("videoId") != ident:
+        return None
+    original = tracks[0]
+    if original.get("videoType") not in ("MUSIC_VIDEO_TYPE_OMV", "MUSIC_VIDEO_TYPE_ATV"):
+        return None
+    counterpart = original.get("counterpart") or {}
+    counterpart_id = counterpart.get("videoId") or ""
+    # A Song/Video pair from the catalog identifies the official audio directly.
+    if counterpart_id != ident and re.fullmatch(r"[A-Za-z0-9_-]{11}", counterpart_id) and counterpart.get("videoType") == "MUSIC_VIDEO_TYPE_ATV":
+        return counterpart_id
+
+    title = normalized_title(original.get("title"))
+    artists = artist_ids(original)
+    length = (original.get("length") or "").split(":")
+    if not title or not artists or not 2 <= len(length) <= 3 or not all(part.isascii() and part.isdigit() for part in length):
+        return None
+    duration = sum(int(part) * 60 ** index for index, part in enumerate(reversed(length)))
+    if duration <= 0:
+        return None
+    query = original["title"] + " " + names(original["artists"])
+    matches = {}
+    for candidate in api.search(query, filter="songs", limit=10)[:10]:
+        source = candidate.get("videoId") or ""
+        seconds = candidate.get("duration_seconds")
+        if (source != ident and re.fullmatch(r"[A-Za-z0-9_-]{11}", source)
+                and candidate.get("videoType") == "MUSIC_VIDEO_TYPE_ATV"
+                and (candidate.get("album") or {}).get("id")
+                and normalized_title(candidate.get("title")) == title and artist_ids(candidate) == artists
+                and type(seconds) is int and seconds > 0
+                and abs(seconds - duration) <= min(30, max(5, duration * 0.1))):
+            matches[source] = seconds
+    # A single and album version can have different IDs. If their running times
+    # differ materially, avoid choosing a recording based on search rank.
+    if matches and max(matches.values()) - min(matches.values()) <= 3:
+        return next(iter(matches))
+    return None
+
+
+def find_official_audio(ident):
+    from ytmusicapi import YTMusic
+    import certifi
+    import requests
+    from functools import partial
+    with requests.Session() as session:
+        session.trust_env = False
+        session.verify = certifi.where()
+        session.request = partial(session.request, timeout=5)
+        return official_audio_candidate(YTMusic(requests_session=session, location="JP"), ident)
 
 
 def song_lyrics(api, ident):

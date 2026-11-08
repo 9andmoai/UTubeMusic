@@ -53,7 +53,7 @@ final class LibraryStore: ObservableObject {
     }
     func isPlayable(_ song: Song) -> Bool { isAvailable(song) || song.onlineOnly == true }
     func canRemoveDownload(_ song: Song) -> Bool {
-        song.id.range(of: "^[A-Za-z0-9_-]{11}$", options: .regularExpression) != nil && song.fileName != nil
+        song.hasYouTubeSource && song.fileName != nil
     }
     func removeDownload(_ id: String) throws {
         guard let original = song(id), canRemoveDownload(original), let name = original.fileName,
@@ -221,15 +221,22 @@ final class LibraryStore: ObservableObject {
         }
     }
     func delete(_ song: Song) throws {
+        guard let song = self.song(song.id) else { return }
         // Commit the index first. A failed database write must never lose the audio file.
         try commit {
             songs.removeAll { $0.id == song.id }
             for i in playlists.indices { playlists[i].songIDs.removeAll { $0 == song.id } }
         }
-        for name in [song.fileName, song.artworkName] {
-            if let url = file(name), fm.fileExists(atPath: url.path) {
-                do { try fm.removeItem(at: url) }
-                catch { message = "曲の登録は削除しましたが、ファイルの削除に失敗しました：\(error.localizedDescription)" }
+        for name in Set([song.fileName, song.artworkName].compactMap { $0 }) {
+            guard !songs.contains(where: { $0.fileName == name || $0.artworkName == name }),
+                  let url = file(name),
+                  ["m4a", "mp3", "aac", "wav", "aif", "aiff", "caf", "jpg"].contains(url.pathExtension.lowercased()),
+                  fm.fileExists(atPath: url.path) else { continue }
+            do {
+                let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                if values.isRegularFile == true, values.isSymbolicLink != true { try fm.removeItem(at: url) }
+            } catch {
+                message = "曲の登録は削除しましたが、ファイルの削除に失敗しました：\(error.localizedDescription)"
             }
         }
     }

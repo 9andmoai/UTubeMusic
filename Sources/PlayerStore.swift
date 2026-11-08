@@ -43,9 +43,11 @@ final class PlayerStore: ObservableObject {
     var preparingStartPosition: Bool { seekingStart || waitingForStartReadiness }
     var playbackButtonSymbol: String { playing || resolvingOnline || buffering ? "pause.fill" : "play.fill" }
     var playbackButtonLabel: String { playbackButtonSymbol == "pause.fill" ? "一時停止" : "再生" }
+    @Published private(set) var alternateAudioID: String?
+    private var alternateIntroOffset: Double?
     var lyricsSongID: String? {
         guard !resolvingOnline, let current, current.hasYouTubeSource else { return nil }
-        return current.id
+        return alternateAudioID ?? current.id
     }
     var playbackVolume: Float { player.volume }
     private let player = AVPlayer()
@@ -160,6 +162,14 @@ final class PlayerStore: ObservableObject {
         if let saved = library.song(id), library.isPlayable(saved) { return saved }
         return searchSongs[id]
     }
+    private var currentStartOffset: Double {
+        guard let current else { return 0 }
+        if alternateAudioID != nil {
+            return autoSkipIntro ? min(alternateIntroOffset ?? 0, max(0, duration - 0.5)) : 0
+        }
+        return (queuedSong(current.id) ?? current).startOffset(duration: duration, automatic: autoSkipIntro)
+    }
+
     func play() {
         preview.stop(resume: false)
         guard let current else { return }
@@ -169,7 +179,7 @@ final class PlayerStore: ObservableObject {
         if preparingVolume { playAfterVolume = true; return }
         if seekingStart { playAfterStart = true; return }
         if needsStartPosition {
-            let offset = resumePosition ?? (queuedSong(current.id) ?? current).startOffset(duration: duration, automatic: autoSkipIntro)
+            let offset = resumePosition ?? currentStartOffset
             if offset > 0, let item = player.currentItem {
                 if item.status != .readyToPlay {
                     waitingForStartReadiness = true; playAfterStart = true; return
@@ -191,7 +201,7 @@ final class PlayerStore: ObservableObject {
             }
             needsStartPosition = false
         }
-        if duration > 0 && elapsed >= duration - 0.005 { seek((queuedSong(current.id) ?? current).startOffset(duration: duration, automatic: autoSkipIntro)) }
+        if duration > 0 && elapsed >= duration - 0.005 { seek(currentStartOffset) }
         do {
             try AVAudioSession.sharedInstance().setActive(true)
             wantsPlayback = true; finishedItem = nil
@@ -236,7 +246,7 @@ final class PlayerStore: ObservableObject {
     }
     func previous() {
         preview.stop(resume: false)
-        let offset = current.map { queuedSong($0.id) ?? $0 }?.startOffset(duration: duration, automatic: autoSkipIntro) ?? 0
+        let offset = currentStartOffset
         if elapsed > offset + 3 { seek(offset); return }
         if let id = queue.previous(), let song = queuedSong(id), library.isPlayable(song) { load(song) }
         else { seek(offset) }
@@ -270,6 +280,7 @@ final class PlayerStore: ObservableObject {
         volumeTask?.cancel(); preparingVolume = false
         durationTask?.cancel(); statusObservation = nil
         player.replaceCurrentItem(with: nil)
+        alternateAudioID = nil; alternateIntroOffset = nil
         current = library.song(id)
         elapsed = 0; duration = current?.duration ?? 0
         updateNowPlaying()
@@ -290,6 +301,7 @@ final class PlayerStore: ObservableObject {
         if !recovering { recoveryAttempts = 0 }
         preview.stop(resume: false)
         let song = queuedSong(song.id) ?? song
+        alternateAudioID = nil; alternateIntroOffset = nil
         resolvingOnline = false
         introTask?.cancel(); preparingIntro = false; playAfterIntro = false
         resetStartPreparation(); resumePosition = resumeAt; needsStartPosition = true
@@ -382,34 +394,41 @@ final class PlayerStore: ObservableObject {
         artwork = nil; resolvingOnline = true; updateNowPlaying()
         streamTask = Task { [weak self] in
             do {
-                let response = try await self?.request(["op": "resolve", "id": song.id])
+                let response = try await self?.request(["op": "resolve", "id": song.id, "allow_official_audio": "1"])
                 guard let response else { return }
                 try Task.checkCancellation()
                 guard let self, self.streamGeneration == token else { return }
                 guard let text = response.url, let url = URL(string: text), url.scheme == "https",
                       url.host?.hasSuffix(".googlevideo.com") == true else { throw AppFailure("音声の取得先を確認できません。") }
-                if self.autoSkipIntro, song.introSkipSeconds == nil, song.detectedIntroSeconds == nil {
+                let alternate = response.audio_source_id
+                let usesAlternate = alternate != nil
+                if self.autoSkipIntro, usesAlternate || (song.introSkipSeconds == nil && song.detectedIntroSeconds == nil) {
                     self.preparingIntro = true
                     let result = await self.introProbe(url, response.headers ?? [:])
                     guard !Task.isCancelled, self.streamGeneration == token else { return }
                     if let result, result.isFinite, (0...8).contains(result) {
-                        self.current?.detectedIntroSeconds = result
-                        if var candidate = self.searchSongs[song.id] {
-                            candidate.detectedIntroSeconds = result
-                            self.searchSongs[song.id] = candidate
+                        if usesAlternate {
+                            self.alternateIntroOffset = result
+                        } else {
+                            self.current?.detectedIntroSeconds = result
+                            if var candidate = self.searchSongs[song.id] {
+                                candidate.detectedIntroSeconds = result
+                                self.searchSongs[song.id] = candidate
+                            }
+                            try? self.library.cacheDetectedIntro(song.id, seconds: result, fileName: nil)
                         }
-                        try? self.library.cacheDetectedIntro(song.id, seconds: result, fileName: nil)
                     }
                     self.preparingIntro = false
                 }
                 var options: [String: Any] = [:]
                 if let agent = response.headers?.first(where: { $0.key.lowercased() == "user-agent" })?.value { options[AVURLAssetHTTPUserAgentKey] = agent }
-                self.normalizedVolume = Loudness.sourceVolume(response.loudness_db ?? song.sourceLoudnessDB)
+                self.normalizedVolume = Loudness.sourceVolume(response.loudness_db ?? (usesAlternate ? nil : song.sourceLoudnessDB))
                 self.player.volume = self.normalizeVolume ? self.normalizedVolume : 1
-                if self.library.song(song.id) != nil {
+                if !usesAlternate, self.library.song(song.id) != nil {
                     try? self.library.cacheSourceLoudness(song.id, db: response.loudness_db)
                 }
                 let item = self.streamItem(url, options)
+                self.alternateAudioID = alternate
                 self.onlineItem = item; self.sourceAudioDuration = OnlineTiming.valid(response.audio_duration)
                 self.duration = response.song?.duration ?? song.duration
                 // Rounded video/catalog metadata must not force an audio end time.

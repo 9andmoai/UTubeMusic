@@ -63,6 +63,27 @@ final class DownloadRemovalTests: XCTestCase {
         XCTAssertThrowsError(try store.removeDownload(song.id))
         XCTAssertTrue(store.isAvailable(song)); XCTAssertEqual(store.song(song.id), song)
     }
+    func testDeletingOneRegistrationRetainsSharedFiles() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = LibraryStore(root: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let audio = root.appendingPathComponent("shared.m4a")
+        let art = root.appendingPathComponent("shared.jpg")
+        try Data([1]).write(to: audio)
+        try Data([2]).write(to: art)
+        let first = Song(id: "00000000001", title: "First", artist: "Artist", duration: 5, fileName: audio.lastPathComponent, artworkName: art.lastPathComponent)
+        let second = Song(id: "00000000002", title: "Second", artist: "Artist", duration: 5, fileName: audio.lastPathComponent, artworkName: art.lastPathComponent)
+        try store.save(first, playlistIDs: [])
+        try store.save(second, playlistIDs: [])
+        try store.delete(first)
+        XCTAssertNil(store.song(first.id))
+        XCTAssertTrue(store.isAvailable(second))
+        XCTAssertEqual(try Data(contentsOf: art), Data([2]))
+        try store.delete(second)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: audio.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: art.path))
+    }
+
     func testSharedAudioIsRetainedForAnotherSong() async throws {
         let store = LibraryStore(root: try folder())
         let song = try saved(store)

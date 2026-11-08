@@ -110,6 +110,32 @@ def preview_window(info):
     return {"preview_start": start, "preview_end": end, "preview_kind": kind}
 
 
+def resolve_playback(ydl, ident, allow_official_audio):
+    url = "https://www.youtube.com/watch?v="
+    if not allow_official_audio:
+        return select_audio(ydl.extract_info(url + ident, download=False))
+    from yt_dlp.utils import DownloadError
+    try:
+        return select_audio(ydl.extract_info(url + ident, download=False))
+    except DownloadError as error:
+        # Generic sign-in, region restrictions and network errors do not establish
+        # that this is the age gate. Match only an explicit age requirement.
+        if not re.search(r"confirm your age|age[- ]restricted|age verification", str(error), re.I):
+            raise
+
+    try:
+        from music_catalog import find_official_audio
+        alternate = find_official_audio(ident)
+        if alternate:
+            info = ydl.extract_info(url + alternate, download=False)
+            if info.get("id") == alternate and (info.get("age_limit") or 0) == 0:
+                return {**select_audio(info), "audio_source_id": alternate}
+    except Exception:
+        # Treat catalog failures and unavailable alternatives as an unresolved age gate.
+        pass
+    raise ValueError("この動画はYouTubeで年齢確認が必要です。再生できる同じ曲の公式音源が見つかりませんでした。")
+
+
 def dispatch(request_json):
     try:
         request = json.loads(request_json)
@@ -181,12 +207,14 @@ def dispatch(request_json):
         if op in ("resolve", "preview"):
             ident = video_id(str(request.get("id", "")))
             with YoutubeDL(options) as ydl:
-                info = ydl.extract_info("https://www.youtube.com/watch?v=" + ident, download=False)
-            result = {"ok": True, **select_audio(info)}
+                if op == "preview":
+                    info = ydl.extract_info("https://www.youtube.com/watch?v=" + ident, download=False)
+                    result = {"ok": True, **select_audio(info), **preview_window(info)}
+                else:
+                    result = {"ok": True, **resolve_playback(ydl, ident, request.get("allow_official_audio") == "1")}
             import music_catalog
-            result.update(music_catalog.playback_metadata(ident, result.get("audio_format_id")))
-            if op == "preview":
-                result.update(preview_window(info))
+            source = result.get("audio_source_id", ident)
+            result.update(music_catalog.playback_metadata(source, result.get("audio_format_id")))
             return json.dumps(result, ensure_ascii=False)
         raise ValueError("未対応の操作です。")
     except Exception as exc:

@@ -38,7 +38,7 @@ final class PlaybackProgressTests: XCTestCase {
 
 @MainActor
 final class OnlineEndTests: XCTestCase {
-    private func setup(_ kind: String = "regular", count: Int = 2, saved: Bool = true) async throws -> (LibraryStore, PlayerStore, [Song], URL, Double, () -> [AVPlayerItem]) {
+    private func setup(_ kind: String = "regular", count: Int = 2, saved: Bool = true, alternateID: String? = nil) async throws -> (LibraryStore, PlayerStore, [Song], URL, Double, () -> [AVPlayerItem]) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let library = LibraryStore(root: root)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -50,9 +50,13 @@ final class OnlineEndTests: XCTestCase {
         let songs = (1...count).map { Song(id: String(format: "%011d", $0), title: "Track \($0)", artist: "Test", duration: 4) }
         if saved { for song in songs { try library.addOnline(song, favorite: true, playlistIDs: []) } }
         var items: [AVPlayerItem] = []
-        let response: EngineResponse = try JSONDecoder().decode(EngineResponse.self, from: JSONSerialization.data(withJSONObject: [
-            "ok": true, "url": "https://r1.googlevideo.com/test", "audio_duration": realDuration]))
-        let player = PlayerStore(library: library, introProbe: { _,_ in nil }, request: { _ in response }, streamItem: { _,_ in
+        var payload: [String: Any] = ["ok": true, "url": "https://r1.googlevideo.com/test", "audio_duration": realDuration]
+        if let alternateID { payload["audio_source_id"] = alternateID; payload["loudness_db"] = 3 }
+        let response = try JSONDecoder().decode(EngineResponse.self, from: JSONSerialization.data(withJSONObject: payload))
+        let player = PlayerStore(library: library, introProbe: { _,_ in nil }, request: { request in
+            XCTAssertEqual(request["allow_official_audio"], "1")
+            return response
+        }, streamItem: { _,_ in
             let item = AVPlayerItem(url: fixture); items.append(item); return item
         })
         return (library,player,songs,fixture,realDuration,{ items })
@@ -89,6 +93,25 @@ final class OnlineEndTests: XCTestCase {
         library.toggleFavorite(songs[1])
         XCTAssertEqual(library.favorites.map(\.id), [songs[1].id])
         XCTAssertNil(library.song(songs[1].id)?.fileName)
+    }
+
+    func testOfficialAudioKeepsOriginalLibraryAndQueueIdentity() async throws {
+        let alternate = "official123"
+        let (library, player, songs, _, actual, _) = try await setup(count: 1, alternateID: alternate)
+        defer { player.pause() }
+        let playlist = try library.createPlaylist("夜の曲")
+        try library.add(songs[0].id, to: playlist)
+        let database = library.root.appendingPathComponent("library.json")
+        let before = try Data(contentsOf: database)
+        player.start(songs, at: songs[0])
+        try await wait { player.playing && player.lyricsSongID == alternate && abs(player.duration - actual) < 0.1 }
+        XCTAssertEqual(player.alternateAudioID, alternate)
+        XCTAssertEqual(player.current?.id, songs[0].id)
+        XCTAssertEqual(player.queue.current, songs[0].id)
+        XCTAssertEqual(library.favorites.map(\.id), [songs[0].id])
+        XCTAssertEqual(library.playlists.first?.songIDs, [songs[0].id])
+        XCTAssertNil(library.song(alternate))
+        XCTAssertEqual(try Data(contentsOf: database), before)
     }
 
     func testDASHMismatchReachesRealEndAndRepeatOneReloadsSameSong() async throws {

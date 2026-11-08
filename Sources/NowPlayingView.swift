@@ -66,12 +66,12 @@ struct NowPlayingView: View {
                             IconButton(symbol: player.queue.repeatMode.symbol, label: player.queue.repeatMode.label + "・切り替え", color: player.queue.repeatMode == .off ? Palette.secondary : Palette.accent) { player.toggleRepeat() }
                         }
                         HStack {
-                            Label(library.isAvailable(song) ? "オフラインで再生" : player.resolvingOnline ? "再生を準備中…" : player.buffering ? "通信待ち…" : "オンラインで再生", systemImage: library.isAvailable(song) ? "checkmark.circle.fill" : "antenna.radiowaves.left.and.right").font(.caption).foregroundStyle(Palette.secondary)
+                            Label(library.isAvailable(song) ? "オフラインで再生" : player.resolvingOnline ? "再生を準備中…" : player.buffering ? "通信待ち…" : player.alternateAudioID != nil ? "公式音源版で再生" : "オンラインで再生", systemImage: library.isAvailable(song) ? "checkmark.circle.fill" : "antenna.radiowaves.left.and.right").font(.caption).foregroundStyle(Palette.secondary)
                             Spacer()
                             IconButton(symbol: "list.bullet", label: "再生キュー") { showQueue = true }
                         }.padding(.top, 4)
                         if song.hasYouTubeSource {
-                            LyricsCard(state: lyrics.state(for: song.id), elapsed: player.elapsed) { showLyrics = true }
+                            LyricsCard(state: player.lyricsSongID.map { lyrics.state(for: $0) } ?? .loading, elapsed: player.elapsed) { showLyrics = true }
                                 .id(song.id)
                         }
                     } else {

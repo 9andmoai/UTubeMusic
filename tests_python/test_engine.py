@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location("music_engine", Path(__file__).resolve().parents[1] / "Python/music_engine.py")
 engine = importlib.util.module_from_spec(spec)
@@ -102,6 +102,43 @@ class EngineTests(unittest.TestCase):
             for offset in [-1, 1000, "bad"]:
                 result = json.loads(engine.dispatch(json.dumps({"op": "search", "query": "Song", "offset": offset})))
                 self.assertFalse(result["ok"])
+
+    def test_official_audio_fallback_requires_explicit_age_gate_and_playback_opt_in(self):
+        class DownloadError(Exception): pass
+        alternate = "official123"
+        finder = Mock(return_value=alternate)
+        ydl = Mock()
+        with patch.dict(sys.modules, {"yt_dlp.utils": types.SimpleNamespace(DownloadError=DownloadError),
+                                      "music_catalog": types.SimpleNamespace(find_official_audio=finder)}):
+            for enabled, message in [(False, "Sign in to confirm your age"), (True, "Sign in to confirm you're not a bot"),
+                                     (True, "The read operation timed out"), (True, "Not available in your country")]:
+                ydl.extract_info.side_effect = DownloadError(message)
+                with self.assertRaises(DownloadError):
+                    engine.resolve_playback(ydl, ID, enabled)
+            finder.assert_not_called()
+            ydl.extract_info.side_effect = [DownloadError("Sign in to confirm your age"),
+                                            {**self.info([self.format()]), "id": alternate, "age_limit": 0}]
+            result = engine.resolve_playback(ydl, ID, True)
+            self.assertEqual(result["audio_source_id"], alternate)
+            self.assertEqual(result["song"]["id"], alternate)
+            finder.assert_called_once_with(ID)
+
+    def test_official_audio_rejects_an_age_restricted_or_mismatched_alternative(self):
+        class DownloadError(Exception): pass
+        finder = Mock(return_value="official123")
+        ydl = Mock()
+        with patch.dict(sys.modules, {"yt_dlp.utils": types.SimpleNamespace(DownloadError=DownloadError),
+                                      "music_catalog": types.SimpleNamespace(find_official_audio=finder)}):
+            for info in [self.info([self.format()]), {**self.info([self.format()]), "id": "official123", "age_limit": 18}]:
+                ydl.extract_info.side_effect = [DownloadError("This video is age-restricted"), info]
+                with self.assertRaisesRegex(ValueError, "年齢確認"):
+                    engine.resolve_playback(ydl, ID, True)
+            finder.return_value = None
+            ydl.extract_info.reset_mock(side_effect=True)
+            ydl.extract_info.side_effect = DownloadError("Sign in to confirm your age")
+            with self.assertRaisesRegex(ValueError, "年齢確認"):
+                engine.resolve_playback(ydl, ID, True)
+            self.assertEqual(ydl.extract_info.call_count, 1)
 
     def test_preview_uses_named_chorus_and_respects_chapter_end(self):
         result = engine.preview_window({"duration": 200, "chapters": [
