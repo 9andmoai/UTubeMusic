@@ -43,6 +43,10 @@ final class PlayerStore: ObservableObject {
     var preparingStartPosition: Bool { seekingStart || waitingForStartReadiness }
     var playbackButtonSymbol: String { playing || resolvingOnline || buffering ? "pause.fill" : "play.fill" }
     var playbackButtonLabel: String { playbackButtonSymbol == "pause.fill" ? "一時停止" : "再生" }
+    var lyricsSongID: String? {
+        guard !resolvingOnline, let current, current.hasYouTubeSource else { return nil }
+        return current.id
+    }
     var playbackVolume: Float { player.volume }
     private let player = AVPlayer()
     private let request: ([String: String]) async throws -> EngineResponse

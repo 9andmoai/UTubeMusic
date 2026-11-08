@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct NowPlayingView: View {
     @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var library: LibraryStore
@@ -9,6 +10,12 @@ struct NowPlayingView: View {
     @State private var showQueue = false
     @State private var showActions = false
     @State private var showLyrics = false
+    @StateObject private var lyrics: LyricsStore
+
+    init(lyrics: LyricsStore? = nil) {
+        _lyrics = StateObject(wrappedValue: lyrics ?? LyricsStore())
+    }
+
     var body: some View {
         GeometryReader { geo in
             ScrollView {
@@ -64,14 +71,8 @@ struct NowPlayingView: View {
                             IconButton(symbol: "list.bullet", label: "再生キュー") { showQueue = true }
                         }.padding(.top, 4)
                         if song.hasYouTubeSource {
-                            Button { showLyrics = true } label: {
-                                HStack {
-                                    Label("歌詞", systemImage: "quote.bubble").font(.title3.bold())
-                                    Spacer()
-                                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.subheadline)
-                                }.padding(18).frame(minHeight: 64).contentShape(Rectangle())
-                                    .background(Palette.raised, in: RoundedRectangle(cornerRadius: 14))
-                            }.buttonStyle(.plain).accessibilityLabel("歌詞を開く")
+                            LyricsCard(state: lyrics.state(for: song.id), elapsed: player.elapsed) { showLyrics = true }
+                                .id(song.id)
                         }
                     } else {
                         EmptyPanel(symbol: "music.note", title: "再生する曲を選んでください", detail: "保存した曲をライブラリから選べます。")
@@ -89,7 +90,8 @@ struct NowPlayingView: View {
                     else { SaveSongSheet(song: song) }
                 }
             }
-            .fullScreenCover(isPresented: $showLyrics) { LyricsView() }
+            .onChange(of: player.lyricsSongID, initial: true) { _, id in lyrics.load(id) }
+            .fullScreenCover(isPresented: $showLyrics) { LyricsView(lyrics: lyrics) }
             .appFeedback()
     }
 }

@@ -55,13 +55,22 @@ final class ScreenCaptureTests: XCTestCase {
         XCTAssertEqual(lyrics.activeLine(at: 10), 2)
         XCTAssertNil(lyrics.activeLine(at: 14))
         XCTAssertEqual(lyrics.activeLine(at: 5), 1)
-        let view = LyricsView(request: { _ in response }).environmentObject(library).environmentObject(player).environmentObject(music)
-        try await render(view, name: "native-lyrics", prepare: { _ in
+        var requests: [String] = []
+        let store = LyricsStore { request in
+            requests.append(request["id"] ?? "")
+            return response
+        }
+        let view = NowPlayingView(lyrics: store).environmentObject(library).environmentObject(player).environmentObject(music)
+        try await render(view, name: "native-inline-lyrics", scrollToBottom: true, prepare: { _ in
             player.pause()
             player.seek(11)
             try await Task.sleep(nanoseconds: 450_000_000)
             XCTAssertEqual(lyrics.activeLine(at: player.elapsed), 2)
+            guard case .loaded = store.state(for: fixture.id) else { return XCTFail("Inline lyrics must load without opening full screen") }
         })
+        try await render(LyricsView(lyrics: store).environmentObject(library).environmentObject(player).environmentObject(music),
+                         name: "native-lyrics")
+        XCTAssertEqual(requests, [fixture.id], "Inline and full-screen lyrics should share one request")
     }
     func testCaptureIntroSkip() async throws {
         let (library, player, music, song) = try playableLibrary()
