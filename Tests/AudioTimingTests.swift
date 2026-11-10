@@ -57,7 +57,10 @@ final class AudioTimingTests: XCTestCase {
         do { _ = try await AudioTiming.read(invalid); XCTFail("Invalid media must fail") }
         catch { XCTAssertEqual(try Data(contentsOf: invalid), bytes) }
         let valid = try fixture("regular", in: folder), original = try Data(contentsOf: valid)
-        let work = Task { try await AudioTiming.read(valid) }; work.cancel()
+        let work = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await AudioTiming.read(valid)
+        }
         do { _ = try await work.value; XCTFail("Cancelled work must fail") }
         catch { XCTAssertTrue(error is CancellationError) }
         XCTAssertEqual(try Data(contentsOf: valid), original)
