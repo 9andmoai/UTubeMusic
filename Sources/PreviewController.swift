@@ -25,6 +25,10 @@ final class PreviewController: ObservableObject {
     @Published private(set) var song: Song?
     @Published private(set) var loading = false
     @Published private(set) var window: PreviewWindow?
+    var normalizationEnabled = true {
+        didSet { player.volume = normalizationEnabled ? normalizedVolume : 1 }
+    }
+    private var normalizedVolume: Float = 1
     private let player = AVPlayer()
     private let request: ([String: String]) async throws -> EngineResponse
     private let itemFactory: (URL, [String: String]) -> AVPlayerItem
@@ -80,10 +84,11 @@ final class PreviewController: ObservableObject {
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let url: URL, headers: [String: String], segment: PreviewWindow
+                let url: URL, headers: [String: String], segment: PreviewWindow, volume: Float
                 if let localURL {
                     let timing = try await AudioTiming.read(localURL)
                     url = localURL; headers = [:]; segment = try .middle(duration: timing.duration)
+                    volume = normalizationEnabled ? Loudness.volume(lufs: try? await Loudness.read(localURL)) : 1
                 } else {
                     let response = try await request(["op": "preview", "id": value.id])
                     guard let text = response.url, let resolved = URL(string: text), resolved.scheme == "https",
@@ -94,15 +99,18 @@ final class PreviewController: ObservableObject {
                     if let duration = response.song?.duration, duration > 0, end > duration + 0.1 {
                         throw AppFailure("試し聞きの再生範囲を確認できません。")
                     }
+                    volume = Loudness.sourceVolume(response.loudness_db)
                     url = resolved; headers = response.headers ?? [:]
                     segment = try PreviewWindow(start: start, end: end, kind: response.preview_kind ?? "middle")
                 }
                 try Task.checkCancellation()
                 guard generation == token else { return }
+                normalizedVolume = volume
                 window = segment
                 let item = itemFactory(url, headers)
                 item.preferredForwardBufferDuration = 3
                 item.forwardPlaybackEndTime = CMTime(seconds: segment.end, preferredTimescale: 600)
+                player.volume = normalizationEnabled ? normalizedVolume : 1
                 player.replaceCurrentItem(with: item)
                 observation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
                     let status = item.status

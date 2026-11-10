@@ -35,7 +35,7 @@ struct CatalogArtwork: View {
     var body: some View {
         Group {
             if let value = item.thumbnail, let url = URL(string: value) {
-                AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { placeholder }
+                ArtworkImage(url: url) { placeholder }
             } else { placeholder }
         }.frame(width: size, height: size).clipped().clipShape(RoundedRectangle(cornerRadius: item.kind == "album" ? 5 : 12)).accessibilityHidden(true)
     }
@@ -76,7 +76,7 @@ struct SearchMoreButton: View {
                     if loading { ProgressView().tint(Palette.accent) }
                     else { Image(systemName: error == nil ? "plus.circle" : "arrow.clockwise") }
                     Text(loading ? "読み込み中…" : error == nil ? "さらに表示" : "もう一度読み込む").font(.subheadline.bold())
-                }.frame(maxWidth: .infinity, minHeight: 52).background(Palette.surface, in: Capsule())
+                }.frame(maxWidth: .infinity, minHeight: 52).background(Palette.surface, in: Capsule()).contentShape(Capsule())
             }.buttonStyle(.plain).disabled(loading).accessibilityIdentifier("load-more")
         }.padding(.vertical, 16)
     }
@@ -95,13 +95,19 @@ struct SongSearchResults: View {
             else {
                 ForEach(search.results) { song in
                     let existing = library.song(song.id)
-                    let available = existing.map(library.isAvailable) ?? false
+                    let available = existing.map(library.isPlayable) ?? false
                     if let destination, let existing, available {
                         DestinationSongRow(song: existing, destination: destination)
+                    } else if destination != nil {
+                        SongRow(song: song, trailing: "plus.circle", trailingLabel: "\(song.title)を追加") {
+                            save = song
+                        } more: { save = song }
                     } else {
-                    SongRow(song: song, subtitle: song.artist + (song.duration > 0 ? " · " + song.timeLabel : ""), trailing: available ? "ellipsis" : "arrow.down.circle", allowsPreview: true) {
-                        if let existing, available { player.start([existing], at: existing) } else { save = song }
-                    } more: { if let existing, available { menu = existing } else { save = song } }
+                        SongRow(song: existing ?? song, actionLabel: "\(song.title)を再生") {
+                            player.start(search.results, at: song, source: .search)
+                        } more: {
+                            if let existing { menu = existing } else { save = song }
+                        }
                     }
                 }
                 if search.hasMore {
@@ -111,8 +117,6 @@ struct SongSearchResults: View {
                 } else { Text("ここまで\(search.results.count)曲を表示").font(.caption).foregroundStyle(Palette.secondary).padding(.vertical, 22) }
             }
         }.sheet(item: $save) { SaveSongSheet(song: $0, initialPlaylistIDs: destination?.initialPlaylistIDs ?? []) }.sheet(item: $menu) { SongActionsSheet(song: $0) }
-            .onDisappear { player.preview.stop() }
-            .onChange(of: save?.id) { _, value in if value != nil { player.preview.stop() } }
     }
 }
 struct CatalogSearchResults: View {
@@ -160,6 +164,11 @@ struct RemoteCollectionView: View {
         _store = StateObject(wrappedValue: store ?? CatalogStore())
     }
     private var displayed: CatalogItem { store.collection ?? item }
+
+    private func play(_ song: Song, shuffle: Bool = false) {
+        player.start(store.songs, at: song, shuffle: shuffle, source: .collection(displayed.title))
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -172,28 +181,39 @@ struct RemoteCollectionView: View {
                     PrimaryButton(title: "もう一度読み込む") { Task { await store.open(item) } }
                 } else {
                     Text("\(store.songs.count)曲 · " + Song.clock(store.songs.reduce(0) { $0 + $1.duration })).font(.caption).foregroundStyle(Palette.secondary)
-                    PrimaryButton(title: "まとめて保存", symbol: "arrow.down.circle") { confirm = true }.disabled(store.songs.isEmpty || library.recoveryNeeded)
-                    Text("同じ名前のプレイリストをこのiPhoneに作成します。保存済みの曲は再ダウンロードしません。")
-                        .font(.caption).foregroundStyle(Palette.secondary).lineSpacing(3)
-                    if store.unavailable > 0 { Text("非公開・再生不可・重複などの\(store.unavailable)件は一覧から除外しています。") .font(.caption).foregroundStyle(Palette.secondary) }
-                    ForEach(store.songs) { song in
-                        let existing = library.song(song.id)
-                        let available = existing.map(library.isAvailable) ?? false
-                        SongRow(song: song, trailing: available ? "ellipsis" : "arrow.down.circle", allowsPreview: true) {
-                            if let existing, available { player.start(store.songs.compactMap { library.song($0.id) }.filter(library.isAvailable), at: existing) }
-                            else { save = song }
-                        } more: { if let existing, available { menu = existing } else { save = song } }
+                    if let first = store.songs.first {
+                        HStack(spacing: 12) {
+                            PrimaryButton(title: "先頭から再生", symbol: "play.fill") { play(first) }
+                                .accessibilityIdentifier("collection-play")
+                            IconButton(symbol: "shuffle", label: "シャッフル再生", color: Palette.accent, size: 22) {
+                                if let song = store.songs.randomElement() { play(song, shuffle: true) }
+                            }.accessibilityIdentifier("collection-shuffle")
+                        }
+                        Button { confirm = true } label: {
+                            Label("まとめて追加", systemImage: "plus.circle")
+                                .font(.subheadline.bold()).frame(minHeight: 44).contentShape(Rectangle())
+                        }.buttonStyle(.plain).disabled(library.recoveryNeeded)
                     }
-                    if store.songs.isEmpty { EmptyPanel(symbol: "music.note", title: "保存できる曲がありません", detail: "公開状態や地域によって収録曲を取得できない場合があります。") }
+                    if store.unavailable > 0 { Text("非公開・再生不可・重複などの\(store.unavailable)件は一覧から除外しています。") .font(.caption).foregroundStyle(Palette.secondary) }
+                    LazyVStack(spacing: 4) {
+                        ForEach(store.songs) { song in
+                            let existing = library.song(song.id)
+                            SongRow(song: existing ?? song, actionLabel: "\(song.title)を再生") {
+                                play(song)
+                            } more: {
+                                if let existing { menu = existing } else { save = song }
+                            }
+                        }
+                    }
+                    if store.songs.isEmpty { EmptyPanel(symbol: "music.note", title: "再生できる曲がありません", detail: "公開状態や地域によって収録曲を取得できない場合があります。") }
                 }
             }.padding(20).padding(.bottom, 16)
         }.background(Palette.background).foregroundStyle(Palette.text)
             .toolbar(.visible, for: .navigationBar).toolbarBackground(Palette.background, for: .navigationBar)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { IconButton(symbol: "arrow.down.circle", label: "保存の状況") { showDownloads = true } } }
             .task { if !store.loaded { await store.open(item) } }
-            .onDisappear { player.preview.stop() }
-            .onChange(of: save?.id) { _, value in if value != nil { player.preview.stop() } }
-            .sheet(item: $save) { SaveSongSheet(song: $0) }.sheet(item: $menu) { SongActionsSheet(song: $0) }
+            .sheet(item: $save) { SaveSongSheet(song: $0) }
+            .sheet(item: $menu) { song in SongActionsSheet(song: song, playFromContext: { play(song) }) }
             .sheet(isPresented: $showDownloads) { DownloadsView() }
             .sheet(isPresented: $confirm, onDismiss: {
                 if batchQueued { batchQueued = false; showDownloads = true }

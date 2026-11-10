@@ -57,7 +57,10 @@ final class AudioTimingTests: XCTestCase {
         do { _ = try await AudioTiming.read(invalid); XCTFail("Invalid media must fail") }
         catch { XCTAssertEqual(try Data(contentsOf: invalid), bytes) }
         let valid = try fixture("regular", in: folder), original = try Data(contentsOf: valid)
-        let work = Task { try await AudioTiming.read(valid) }; work.cancel()
+        let work = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await AudioTiming.read(valid)
+        }
         do { _ = try await work.value; XCTFail("Cancelled work must fail") }
         catch { XCTAssertTrue(error is CancellationError) }
         XCTAssertEqual(try Data(contentsOf: valid), original)
@@ -118,7 +121,7 @@ final class AudioTimingTests: XCTestCase {
         let source = try fixture("regular", in: folder), original = try Data(contentsOf: source)
         let song = Song(id: "AbCdEf123_-", title: "Saved", artist: "Artist", duration: 6, fileName: source.lastPathComponent)
         try store.save(song, playlistIDs: [])
-        let player = PlayerStore(library: store); player.start([song], at: song); player.pause()
+        let player = PlayerStore(library: store, introProbe: { _, _ in nil }); player.start([song], at: song); player.pause()
         let deadline = Date().addingTimeInterval(5)
         while player.duration > 3.15 && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertEqual(player.duration, 3, accuracy: 0.15)
@@ -134,7 +137,7 @@ final class AudioTimingTests: XCTestCase {
         let second = Song(id: "second", title: "Second", artist: "Artist", duration: 3,
                           fileName: source.lastPathComponent, audioTimingVersion: 1)
         try store.save(first, playlistIDs: []); try store.save(second, playlistIDs: [])
-        let player = PlayerStore(library: store); player.start([first, second], at: first)
+        let player = PlayerStore(library: store, introProbe: { _, _ in nil }); player.start([first, second], at: first)
         let deadline = Date().addingTimeInterval(5)
         while player.duration > 3.15 && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertEqual(player.duration, 3, accuracy: 0.15)
@@ -145,7 +148,8 @@ final class AudioTimingTests: XCTestCase {
         player.toggleRepeat(); player.toggleRepeat()
         XCTAssertEqual(player.queue.repeatMode, .one)
         player.seek(2.7); player.play()
-        try await Task.sleep(nanoseconds: 800_000_000)
+        let repeatDeadline = Date().addingTimeInterval(3)
+        while player.elapsed >= 2 && Date() < repeatDeadline { try await Task.sleep(nanoseconds: 20_000_000) }
         player.pause(); XCTAssertEqual(player.current?.id, second.id); XCTAssertLessThan(player.elapsed, 2)
         XCTAssertEqual(try Data(contentsOf: source), original)
     }

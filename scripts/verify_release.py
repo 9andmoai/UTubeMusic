@@ -39,6 +39,7 @@ def main():
             names = ipa.namelist()
             prefix = "Payload/UTubeMusic.app/"
             assert all(name.startswith(prefix) for name in names)
+            assert not any(name.startswith(prefix + "python/lib/python3.13/test/") for name in names)
             info = plistlib.loads(ipa.read(prefix + "Info.plist"))
             assert info["CFBundleIdentifier"] == "local.utubemusic.player"
             assert info["CFBundleShortVersionString"] == version
@@ -64,7 +65,7 @@ def main():
     report = {"version": version, "bundle_id": info["CFBundleIdentifier"], "platform": "iphoneos",
               "architecture": "arm64", "sha256": digest, "bytes": len(ipa_bytes), "frameworks": len(frameworks),
               "background_audio": True, "signed_for_device": False, "physical_iPhone_tested": False,
-              "native_tests": native_tests, "python_tests": 19, "native_test_result": "passed",
+              "native_tests": native_tests, "python_tests": 30, "native_test_result": "passed",
               "ci_run": f"https://github.com/iwamoto0414yuuki-droid/UTubeMusic/actions/runs/{args.run}",
               "source_commit": args.commit}
     text = json.dumps(report, indent=2) + "\n"

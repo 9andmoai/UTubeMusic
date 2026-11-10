@@ -22,6 +22,20 @@ struct IconButton: View {
         }.buttonStyle(.plain).accessibilityLabel(label)
     }
 }
+struct TextActionButton: View {
+    let title: String
+    var font: Font
+    let action: () -> Void
+    init(_ title: String, font: Font = .subheadline, action: @escaping () -> Void) {
+        self.title = title; self.font = font; self.action = action
+    }
+    var body: some View {
+        Button(action: action) {
+            Text(title).font(font.weight(.semibold))
+                .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+}
 struct PrimaryButton: View {
     let title: String
     var symbol: String? = nil
@@ -32,7 +46,7 @@ struct PrimaryButton: View {
                 if let symbol { Image(systemName: symbol) }
                 Text(title).fontWeight(.bold)
             }.frame(maxWidth: .infinity).padding(.vertical, 16)
-                .background(Palette.accent, in: Capsule()).foregroundStyle(Color.black)
+                .background(Palette.accent, in: Capsule()).foregroundStyle(Color.black).contentShape(Capsule())
         }.buttonStyle(.plain)
     }
 }
@@ -46,7 +60,7 @@ struct SongArtwork: View {
             if let url = library.file(song?.artworkName), let image = UIImage(contentsOfFile: url.path) {
                 Image(uiImage: image).resizable().scaledToFill()
             } else if let thumbnail = song?.thumbnail, let url = URL(string: thumbnail) {
-                AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { placeholder }
+                ArtworkImage(url: url) { placeholder }
             } else { placeholder }
         }.frame(width: size, height: size).clipped().clipShape(RoundedRectangle(cornerRadius: radius))
             .accessibilityHidden(true)
@@ -101,6 +115,7 @@ struct SongRow: View {
     var trailing = "ellipsis"
     var trailingLabel: String? = nil
     var allowsPreview = false
+    var actionLabel: String? = nil
     let action: () -> Void
     let more: () -> Void
     @EnvironmentObject private var player: PlayerStore
@@ -115,7 +130,7 @@ struct SongRow: View {
                     }
                     Spacer(minLength: 0)
                 }.contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain).accessibilityLabel(actionLabel ?? "\(song.title)、\(subtitle ?? song.artist)")
             if allowsPreview { PreviewButton(song: song) }
             IconButton(symbol: trailing, label: trailingLabel ?? (trailing == "arrow.down.circle" ? "\(song.title)を保存" : "\(song.title)のメニュー"), action: more)
         }.padding(.vertical, 6)

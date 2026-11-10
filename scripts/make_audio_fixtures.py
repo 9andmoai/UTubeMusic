@@ -49,6 +49,14 @@ def main():
                         *(["-frag_duration", "500000"] if name == "dash" else []),
                         "-f", "mp4", str(output)], check=True)
         fixtures[name] = base64.b64encode(output.read_bytes()).decode()
+    for name, flags in [("intro_regular", "+faststart"), ("intro_dash", "+dash+global_sidx")]:
+        output = work / (name + ".m4a")
+        subprocess.run([sys.argv[1], "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                        r"aevalsrc=if(lt(t\,2)\,0\,0.1*sin(2*PI*440*t)):s=44100:d=12",
+                        "-c:a", "aac", "-b:a", "96k", "-movflags", flags,
+                        *(["-frag_duration", "500000"] if name == "intro_dash" else []),
+                        "-f", "mp4", str(output)], check=True)
+        fixtures[name] = base64.b64encode(output.read_bytes()).decode()
     fixtures["dash_nonzero_headers"] = base64.b64encode(inflate_dash_headers(base64.b64decode(fixtures["dash"]))).decode()
     folder = ROOT / "Tests/Fixtures"
     folder.mkdir(exist_ok=True)

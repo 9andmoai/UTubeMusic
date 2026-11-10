@@ -5,14 +5,14 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED = {"Sources", "Python", "Tests", "tests_python", "scripts", "design", ".github"}
-ROOT_FILES = {".gitignore", ".gitattributes", "project.yml", "README.md", "INSTALL_IPHONE.md", "LICENSE", "THIRD_PARTY_BASE.txt"}
+ROOT_FILES = {".gitignore", ".gitattributes", "project.yml", "README.md", "INSTALL_IPHONE.md", "LICENSE", "THIRD_PARTY_BASE.txt", "CLEANUP_REVIEW.md"}
 EXTENSIONS = {".swift", ".m", ".h", ".py", ".yml", ".lock", ".html", ".mjs", ".sh", ".png", ".json", ".md", ".txt"}
 
 
 def main():
     build = ROOT / "build"
     build.mkdir(exist_ok=True)
-    output = build / "UTubeMusic-0.2.3-source.zip"
+    output = build / "UTubeMusic-0.3.11-source.zip"
     paths = []
     candidates = [ROOT / name for name in ROOT_FILES]
     for folder in ALLOWED:

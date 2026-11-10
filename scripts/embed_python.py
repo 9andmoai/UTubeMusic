@@ -10,6 +10,16 @@ import shutil
 import subprocess
 
 
+def trim_development_resources(app):
+    # CPython's regression suite is not an application dependency. Preserve
+    # unittest, runtime modules, package metadata, certificates and all licenses.
+    test_suite = app / "python/lib/python3.13/test"
+    if test_suite.is_dir():
+        if test_suite.is_symlink() or app.resolve() not in test_suite.resolve().parents:
+            raise RuntimeError("Refusing to trim resources outside generated app")
+        shutil.rmtree(test_suite)
+
+
 def main():
     root = Path(os.environ["PROJECT_DIR"])
     app = Path(os.environ["TARGET_BUILD_DIR"]) / os.environ["WRAPPER_NAME"]
@@ -35,6 +45,7 @@ def main():
     for module in (root / "Python").glob("*.py"):
         shutil.copy2(module, app / "app" / module.name)
     shutil.copy2(root / "vendor/ThirdPartyNotices.txt", app / "ThirdPartyNotices.txt")
+    trim_development_resources(app)
     frameworks = app / "Frameworks"
     frameworks.mkdir(exist_ok=True)
     base = app / "python/lib/python3.13/lib-dynload"

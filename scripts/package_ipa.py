@@ -16,8 +16,9 @@ def main():
     assert (app / "app/music_engine.py").is_file()
     assert (app / "Frameworks/Python.framework/Python").is_file()
     assert (app / "python/lib/python3.13/encodings").is_dir()
+    assert not (app / "python/lib/python3.13/test").exists(), "Development-only CPython tests must not ship"
     assert not list(app.rglob("*.so")), "Unpackaged native Python modules"
-    output = ROOT / "build/UTubeMusic-0.2.3-unsigned.ipa"
+    output = ROOT / "build/UTubeMusic-0.3.11-unsigned.ipa"
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(app.rglob("*")):
             relative = str(Path("Payload") / "UTubeMusic.app" / path.relative_to(app))

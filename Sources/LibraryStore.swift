@@ -1,6 +1,12 @@
 import Foundation
 import AVFoundation
 
+struct DownloadRemovalReport {
+    var removed: [String] = []
+    var failures: [String] = []
+    var cancelled = false
+}
+
 @MainActor
 final class LibraryStore: ObservableObject {
     @Published private(set) var songs: [Song] = []
@@ -10,8 +16,10 @@ final class LibraryStore: ObservableObject {
     let root: URL
     private let database: URL
     private let fm = FileManager.default
+    private let removeDownloadedFile: (URL) throws -> Void
 
-    init(root: URL? = nil) {
+    init(root: URL? = nil, removeDownloadedFile: @escaping (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }) {
+        self.removeDownloadedFile = removeDownloadedFile
         self.root = root ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("UTubeMusic", isDirectory: true)
         database = self.root.appendingPathComponent("library.json")
@@ -43,6 +51,89 @@ final class LibraryStore: ObservableObject {
         guard let url = file(song.fileName) else { return false }
         return fm.fileExists(atPath: url.path)
     }
+    func isPlayable(_ song: Song) -> Bool { isAvailable(song) || song.onlineOnly == true }
+    func canRemoveDownload(_ song: Song) -> Bool {
+        song.hasYouTubeSource && song.fileName != nil
+    }
+    func removeDownload(_ id: String) throws {
+        guard let original = song(id), canRemoveDownload(original), let name = original.fileName,
+              let url = file(name), ["m4a", "mp3", "aac", "wav", "aif", "aiff", "caf"].contains(url.pathExtension.lowercased()),
+              name != original.artworkName else {
+            throw AppFailure("YouTubeから保存した曲のダウンロードだけを削除できます。読み込んだ音声ファイルはオンラインに切り替えられません。")
+        }
+        if fm.fileExists(atPath: url.path) {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { throw AppFailure("音声ファイルの状態を確認できません。削除を中止しました。") }
+        }
+        // Persist the online registration before deleting any audio. A failed index
+        // write must leave the playable download and all memberships untouched.
+        try commit {
+            if let index = songs.firstIndex(where: { $0.id == id }) {
+                songs[index].fileName = nil
+                songs[index].bytes = 0
+                songs[index].onlineOnly = true
+                songs[index].audioTimingVersion = nil
+            }
+        }
+        guard !songs.contains(where: { $0.fileName == name }), fm.fileExists(atPath: url.path) else { return }
+        do { try removeDownloadedFile(url) }
+        catch {
+            do { try commit { if let index = songs.firstIndex(where: { $0.id == id }) { songs[index] = original } } }
+            catch { throw AppFailure("音声ファイルの削除と登録情報の復元に失敗しました。音声ファイルは残っています。ファイルアプリで確認してください。") }
+            throw AppFailure("音声ファイルを削除できなかったため、ダウンロード済みの状態に戻しました。")
+        }
+    }
+    func removeDownloads(_ ids: [String], didRemove: (String) -> Void = { _ in },
+                         progress: (Int, Int) -> Void = { _, _ in }) async -> DownloadRemovalReport {
+        var seen = Set<String>()
+        let unique = ids.filter { seen.insert($0).inserted }
+        var result = DownloadRemovalReport()
+        for (index, id) in unique.enumerated() {
+            guard !Task.isCancelled else { result.cancelled = true; break }
+            do {
+                try removeDownload(id)
+                result.removed.append(id)
+                didRemove(id)
+            } catch { result.failures.append("\(song(id)?.title ?? id)：\(error.localizedDescription)") }
+            progress(index + 1, unique.count)
+            // Commit and remove one file at a time, allowing cancellation without
+            // losing the memberships of completed, failed or remaining songs.
+            await Task.yield()
+        }
+        return result
+    }
+    func cacheLoudness(_ id: String, fileName: String, lufs: Double?) throws {
+        guard song(id)?.fileName == fileName, lufs == nil || (lufs!.isFinite && (-70...10).contains(lufs!)) else { return }
+        try commit {
+            if let i = songs.firstIndex(where: { $0.id == id }) {
+                songs[i].measuredLoudness = lufs; songs[i].loudnessFileName = fileName
+            }
+        }
+    }
+    func cacheSourceLoudness(_ id: String, db: Double?) throws {
+        guard let db, db.isFinite, (-60...60).contains(db), song(id)?.sourceLoudnessDB != db else { return }
+        try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].sourceLoudnessDB = db } }
+    }
+    func cacheDetectedIntro(_ id: String, seconds: Double, fileName: String?) throws {
+        guard let value = song(id), value.fileName == fileName, seconds.isFinite, (0...8).contains(seconds) else { return }
+        try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].detectedIntroSeconds = seconds } }
+    }
+    func useAutomaticIntro(_ id: String) throws {
+        try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].introSkipSeconds = nil } }
+    }
+    func setIntroSkip(_ id: String, seconds: Double) throws {
+        guard let song = song(id), seconds.isFinite, (0...30).contains(seconds),
+              song.duration <= 0 || seconds <= max(0, song.duration - 0.5) else {
+            throw AppFailure("開始位置は曲の終わりより手前の0〜30秒で指定してください。")
+        }
+        try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].introSkipSeconds = seconds } }
+    }
+    func addOnline(_ song: Song, favorite: Bool, playlistIDs: Set<UUID>) throws {
+        var value = self.song(song.id) ?? song
+        if !isAvailable(value) { value.onlineOnly = true }
+        value.favorite = value.favorite || favorite
+        try save(value, playlistIDs: playlistIDs)
+    }
     func save(_ song: Song, playlistID: UUID?) throws {
         try save(song, playlistIDs: Set(playlistID.map { [$0] } ?? []))
     }
@@ -51,6 +142,8 @@ final class LibraryStore: ObservableObject {
             if let i = songs.firstIndex(where: { $0.id == song.id }) {
                 var updated = song
                 updated.favorite = song.favorite || songs[i].favorite
+                updated.introSkipSeconds = song.introSkipSeconds ?? songs[i].introSkipSeconds
+                updated.detectedIntroSeconds = song.detectedIntroSeconds ?? songs[i].detectedIntroSeconds
                 songs[i] = updated
             } else { songs.insert(song, at: 0) }
             for i in playlists.indices where playlistIDs.contains(playlists[i].id) {
@@ -97,6 +190,11 @@ final class LibraryStore: ObservableObject {
         try commit { if let i = playlists.firstIndex(where: { $0.id == id }) { playlists[i].name = String(name.prefix(100)) } }
     }
     func deletePlaylist(_ id: UUID) throws { try commit { playlists.removeAll { $0.id == id } } }
+    func toggleFavorite(_ song: Song) {
+        if self.song(song.id) != nil { toggleFavorite(song.id); return }
+        do { try addOnline(song, favorite: true, playlistIDs: []) }
+        catch { message = error.localizedDescription }
+    }
     func toggleFavorite(_ id: String) {
         do { try commit { if let i = songs.firstIndex(where: { $0.id == id }) { songs[i].favorite.toggle() } } }
         catch { message = error.localizedDescription }
@@ -123,15 +221,22 @@ final class LibraryStore: ObservableObject {
         }
     }
     func delete(_ song: Song) throws {
+        guard let song = self.song(song.id) else { return }
         // Commit the index first. A failed database write must never lose the audio file.
         try commit {
             songs.removeAll { $0.id == song.id }
             for i in playlists.indices { playlists[i].songIDs.removeAll { $0 == song.id } }
         }
-        for name in [song.fileName, song.artworkName] {
-            if let url = file(name), fm.fileExists(atPath: url.path) {
-                do { try fm.removeItem(at: url) }
-                catch { message = "曲の登録は削除しましたが、ファイルの削除に失敗しました：\(error.localizedDescription)" }
+        for name in Set([song.fileName, song.artworkName].compactMap { $0 }) {
+            guard !songs.contains(where: { $0.fileName == name || $0.artworkName == name }),
+                  let url = file(name),
+                  ["m4a", "mp3", "aac", "wav", "aif", "aiff", "caf", "jpg"].contains(url.pathExtension.lowercased()),
+                  fm.fileExists(atPath: url.path) else { continue }
+            do {
+                let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                if values.isRegularFile == true, values.isSymbolicLink != true { try fm.removeItem(at: url) }
+            } catch {
+                message = "曲の登録は削除しましたが、ファイルの削除に失敗しました：\(error.localizedDescription)"
             }
         }
     }

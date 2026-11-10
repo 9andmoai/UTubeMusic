@@ -5,7 +5,108 @@ import AVFoundation
 
 @MainActor
 final class ScreenCaptureTests: XCTestCase {
-    private func render<V: View>(_ view: V, name: String, scrollToBottom: Bool = false, inspect: ((UIWindow) -> Void)? = nil) async throws {
+    func testKeyboardHidesChromeExpandsSuggestionsAndRestoresPlaybackControls() async throws {
+        let (library, player, music, song) = try playableLibrary()
+        defer { player.pause() }
+        let response = try JSONDecoder().decode(EngineResponse.self, from: Data(#"{"ok":true,"suggestions":["安室奈美恵","安室奈美恵 Love Story","安室奈美恵 CAN YOU CELEBRATE?","安室奈美恵 Hero"]}"#.utf8))
+        let empty = try JSONDecoder().decode(EngineResponse.self, from: Data(#"{"ok":true,"songs":[]}"#.utf8))
+        let state = SearchScreenState(suggestionRequest: { _ in response }, search: SongSearchStore { _ in empty })
+        var frames: [String: CGRect] = [:]
+        let view = RootView(initialTab: 1, searchState: state)
+            .environmentObject(library).environmentObject(player).environmentObject(music)
+            .onPreferenceChange(PlayerLayoutFrames.self) { frames = $0 }
+        try await render(view, name: "native-search-restored", prepare: { window in
+            XCTAssertGreaterThan(frames["chrome"]?.height ?? 0, 100)
+            let ready = Date().addingTimeInterval(4)
+            while !player.playing && Date() < ready { try await Task.sleep(nanoseconds: 50_000_000) }
+            XCTAssertTrue(player.playing)
+            func fields(_ view: UIView) -> [UITextField] {
+                (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let field = try XCTUnwrap(fields(window).first)
+            XCTAssertTrue(field.becomeFirstResponder())
+            state.query = "安室"
+            let deadline = Date().addingTimeInterval(4)
+            while frames["suggestion-安室奈美恵"] == nil && Date() < deadline { try await Task.sleep(nanoseconds: 50_000_000) }
+            window.layoutIfNeeded()
+            XCTAssertNil(frames["chrome"], "Typing must remove both navigation and mini player from layout")
+            let row = try XCTUnwrap(frames["suggestion-安室奈美恵"])
+            let third = try XCTUnwrap(frames["suggestion-安室奈美恵 CAN YOU CELEBRATE?"])
+            let content = try XCTUnwrap(frames["content"])
+            XCTAssertGreaterThanOrEqual(row.width, 340); XCTAssertGreaterThanOrEqual(row.height, 55)
+            XCTAssertLessThan(third.maxY, content.maxY, "At least the first three full-width choices must be visible")
+            XCTAssertEqual(player.current?.id, song.id); XCTAssertTrue(player.playing, "Hiding controls must not stop music")
+            self.capture(window, name: "native-search-keyboard", keyboard: true)
+            window.endEditing(true)
+            let restore = Date().addingTimeInterval(3)
+            while frames["chrome"] == nil && Date() < restore { try await Task.sleep(nanoseconds: 50_000_000) }
+            XCTAssertGreaterThan(frames["chrome"]?.height ?? 0, 100)
+            XCTAssertEqual(state.query, "安室"); XCTAssertEqual(player.current?.id, song.id)
+        })
+    }
+    func testCaptureSyncedLyrics() async throws {
+        let (library, player, music, song) = try playableLibrary()
+        defer { player.pause() }
+        let fixture = Song(id: "01234567890", title: "Midnight Signals", artist: "UTube Music Demo", duration: song.duration, fileName: song.fileName, audioTimingVersion: 1)
+        try library.save(fixture, playlistIDs: [])
+        player.start([fixture], at: fixture)
+        let response = try JSONDecoder().decode(EngineResponse.self, from: Data(#"{"ok":true,"lyrics":{"source":"画面確認用の歌詞","lines":[{"text":"夜の街に灯がともる","start":0,"end":5},{"text":"窓の向こうを見上げて","start":5,"end":10},{"text":"新しい風を待つ","start":10,"end":13},{"text":"静かな空へ手を伸ばす","start":16,"end":19},{"text":"朝が来るまで歩いていこう","start":19,"end":23}]}}"#.utf8))
+        let lyrics = try XCTUnwrap(response.lyrics)
+        XCTAssertEqual(lyrics.activeLine(at: 10), 2)
+        XCTAssertNil(lyrics.activeLine(at: 14))
+        XCTAssertEqual(lyrics.activeLine(at: 5), 1)
+        var requests: [String] = []
+        let store = LyricsStore { request in
+            requests.append(request["id"] ?? "")
+            return response
+        }
+        let view = NowPlayingView(lyrics: store).environmentObject(library).environmentObject(player).environmentObject(music)
+        try await render(view, name: "native-inline-lyrics", scrollToBottom: true, prepare: { _ in
+            player.pause()
+            player.seek(11)
+            try await Task.sleep(nanoseconds: 450_000_000)
+            XCTAssertEqual(lyrics.activeLine(at: player.elapsed), 2)
+            guard case .loaded = store.state(for: fixture.id) else { return XCTFail("Inline lyrics must load without opening full screen") }
+        })
+        try await render(LyricsView(lyrics: store).environmentObject(library).environmentObject(player).environmentObject(music),
+                         name: "native-lyrics")
+        XCTAssertEqual(requests, [fixture.id], "Inline and full-screen lyrics should share one request")
+    }
+    func testCaptureIntroSkip() async throws {
+        let (library, player, music, song) = try playableLibrary()
+        defer { player.pause() }
+        try library.setIntroSkip(song.id, seconds: 1)
+        try await render(IntroSkipSheet(song: library.song(song.id)!).environmentObject(library).environmentObject(player).environmentObject(music), name: "native-intro-skip")
+    }
+    func testCaptureLoudnessSettings() async throws {
+        let (library, player, music, _) = try playableLibrary()
+        defer { player.pause() }
+        try await render(SettingsView().environmentObject(library).environmentObject(player).environmentObject(music), name: "native-settings")
+    }
+    func testCaptureBulkDownloadSelection() async throws {
+        let (library, player, music, old) = try playableLibrary()
+        defer { player.pause() }
+        let ids = ["00000000001", "00000000002", "00000000003"]
+        for (index, id) in ids.enumerated() {
+            try library.save(Song(id: id, title: "お気に入りの曲 \(index + 1)", artist: "画面確認用", duration: old.duration, fileName: old.fileName, favorite: true), playlistIDs: [])
+        }
+        try await render(NavigationStack { LibraryView(initialFilter: 3, initialSelection: true, initialSelectedIDs: Set(ids.prefix(2))) }
+            .environmentObject(library).environmentObject(player).environmentObject(music), name: "native-download-selection")
+    }
+    func testCaptureDownloadedLibrary() async throws {
+        let (library, player, music, _) = try playableLibrary()
+        defer { player.pause() }
+        try await render(NavigationStack { LibraryView(initialFilter: 3) }.environmentObject(library).environmentObject(player).environmentObject(music), name: "native-download-library")
+    }
+    func testCaptureDownloadRemovalMenu() async throws {
+        let (library, player, music, old) = try playableLibrary()
+        defer { player.pause() }
+        let song = Song(id: "00000000001", title: old.title, artist: old.artist, duration: old.duration,
+                        fileName: old.fileName, favorite: true)
+        try library.save(song, playlistIDs: [])
+        try await render(SongActionsSheet(song: song).environmentObject(library).environmentObject(player).environmentObject(music), name: "native-download-menu")
+    }
+    private func render<V: View>(_ view: V, name: String, scrollToBottom: Bool = false, prepare: ((UIWindow) async throws -> Void)? = nil, inspect: ((UIWindow) -> Void)? = nil) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first { $0.isKeyWindow }
         let window = UIWindow(windowScene: scene)
@@ -13,8 +114,10 @@ final class ScreenCaptureTests: XCTestCase {
         window.overrideUserInterfaceStyle = .dark
         window.rootViewController = UIHostingController(rootView: view.preferredColorScheme(.dark).tint(Palette.accent))
         window.makeKeyAndVisible()
-        defer { window.isHidden = true; previous?.makeKey() }
+        defer { window.endEditing(true); window.isHidden = true; previous?.makeKey() }
         try await Task.sleep(nanoseconds: 1_000_000_000)
+        window.layoutIfNeeded()
+        try await prepare?(window)
         window.layoutIfNeeded()
         if scrollToBottom {
             func scrolls(_ view: UIView) -> [UIScrollView] {
@@ -35,13 +138,25 @@ final class ScreenCaptureTests: XCTestCase {
             XCTAssertGreaterThan(scroll.contentOffset.y, 0, "The actual search scroll view must move")
         }
         inspect?(window)
+        capture(window, name: name)
+    }
+    private func capture(_ window: UIWindow, name: String, keyboard: Bool = false) {
         let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
-        let image = renderer.image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+        let image = renderer.image { context in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            if keyboard, let scene = window.windowScene {
+                for overlay in scene.windows.filter({ $0 !== window && !$0.isHidden && $0.windowLevel > window.windowLevel }).sorted(by: { $0.windowLevel < $1.windowLevel }) {
+                    context.cgContext.saveGState()
+                    let origin = overlay.convert(CGPoint.zero, to: window)
+                    context.cgContext.translateBy(x: origin.x, y: origin.y)
+                    overlay.drawHierarchy(in: overlay.bounds, afterScreenUpdates: true)
+                    context.cgContext.restoreGState()
+                }
+            }
+        }
         XCTAssertGreaterThan(image.size.width, 300)
         let attachment = XCTAttachment(image: image)
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
     private func root() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -51,7 +166,7 @@ final class ScreenCaptureTests: XCTestCase {
     }
     func testCaptureNativeHome() async throws {
         let library = LibraryStore(root: try root())
-        let player = PlayerStore(library: library)
+        let player = PlayerStore(library: library, introProbe: { _, _ in nil })
         let music = MusicService(library: library)
         let catalog = CatalogStore { _ in
             let data = Data(#"{"ok":true,"sections":[{"id":"public","title":"見つけるプレイリスト","items":[{"id":"PLpreview01","kind":"playlist","title":"Chill & Relax","subtitle":"画面確認用","thumbnail":null},{"id":"MPREb_preview","kind":"album","title":"Piano Collection","subtitle":"画面確認用","thumbnail":null}]}]}"#.utf8)
@@ -72,7 +187,7 @@ final class ScreenCaptureTests: XCTestCase {
         }
         let song = Song(id: "local-preview", title: "UTube Music 再生テスト", artist: "画面確認用の無音データ", duration: 60, fileName: url.lastPathComponent, favorite: true)
         try library.save(song, playlistID: nil)
-        let player = PlayerStore(library: library)
+        let player = PlayerStore(library: library, introProbe: { _, _ in nil })
         player.start([song], at: song)
         defer { player.pause() }
         try await render(NowPlayingView().environmentObject(library).environmentObject(player), name: "native-player")
@@ -91,7 +206,7 @@ final class ScreenCaptureTests: XCTestCase {
         let song = Song(id: "local-layout", title: "お気に入りのピアノ", artist: "画面確認用の無音データ", duration: 60, fileName: url.lastPathComponent, favorite: true)
         let list = try library.createPlaylist("夜に聴きたい曲")
         try library.save(song, playlistID: list)
-        let player = PlayerStore(library: library)
+        let player = PlayerStore(library: library, introProbe: { _, _ in nil })
         player.start([song], at: song)
         return (library, player, MusicService(library: library), song)
     }

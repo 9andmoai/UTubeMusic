@@ -1,131 +1,66 @@
 # UTube Music
 
-iPhoneに曲を保存し、同じアプリでお気に入り・プレイリスト・オフライン再生を扱う個人用音楽アプリ。AI機能はありません。YouTube / YouTube Music / Spotifyの公式アプリではありません。
+iPhoneに曲を保存し、同じアプリでお気に入り・プレイリスト・オフライン再生を扱う個人用音楽アプリです。
 
-対象: iPhone 14 / 利用者申告 iOS 27.0.1。開発PC: Windows。更新日: 2026-10-19。
+- AI機能はありません。YouTube / YouTube Music / Spotify の公式アプリではありません
+- 対象：iPhone 14 / iOS 27.0.1（利用者申告）。開発PC：Windows
+- 現在の最新版：**0.3.11**（build 17）
+- ライセンス：MIT（[LICENSE](LICENSE)）。依存ライブラリの条件は [一次資料](#一次資料・依存) を参照
 
-## 現在の状態（0.2.3）：試し聞き
+## できること
 
-検索結果・曲を追加・アルバム／プレイリスト詳細の再生アイコンから、保存前に最大15秒の試し聞きができます。取得元のチャプター名にサビ／Chorus／Refrainがある場合はその位置、ない場合は曲の途中から再生します。サビの自動解析は行いません。短い曲は曲末までです。試し聞き終了・停止時は、直前に再生中だった曲を元の位置から再開します。
+- **探す**：YouTube Music の公開ホーム（プレイリスト／アルバムの棚）の表示、曲・プレイリスト・アルバム検索、入力中の検索候補、気分・ジャンル別の入口
+- **聴く**：検索結果や公開プレイリスト／アルバムからそのまま再生（収録順・シャッフル対応）。保存済み音声があればそちらを優先し、未保存曲はストリーミング再生
+- **試し聞き**：保存前に最大15秒。チャプター名にサビ／Chorus／Refrain があればその位置から
+- **歌詞**：再生画面で同期歌詞カードを表示し、タップで全画面表示。行タップでその位置へ移動（時刻なし歌詞はテキスト表示）
+- **ライブラリ**：お気に入り、自分のプレイリスト、複数プレイリストへの同時追加、公開リストの一括追加（曲順を保持）
+- **保存とオフライン**：ダウンロードは任意。曲の情報だけ登録してオンライン再生もでき、後から「オフライン用にダウンロード」も可能。ダウンロードだけを1曲／複数選択で削除し、所属や曲順を残したままオンライン再生へ切り替えることもできます
+- **再生の工夫**：バックグラウンド再生、ロック画面／イヤホン操作、シャッフル／リピート／キュー、冒頭の無音の自動スキップ（曲ごとの指定も可）、曲ごとの音量差を抑える調整（大きい曲だけ下げる）
+- **その他**：年齢確認が必要な動画では同じ曲の公式音源を探して再生、通信量を抑えるためのメタデータ／ジャケットの再利用
 
-保存済みの曲はローカル音声を使い、未保存曲は通信して再生します。試し聞きでライブラリへ音声ファイルを保存しません。AVPlayerの先読みがあるため、通信量が厳密に15秒分に収まる保証はありません。
+細かい仕様や制限はバージョンごとに違うため、経緯は [CHANGELOG.md](CHANGELOG.md) にまとめています。
 
-ジャケット画像の選択・保存サイズ・JPEG品質・表示デザインは従来通りです。追加の縮小・再圧縮・削除は行いません。音声も従来と同じAACを選び、ビットレート低下や再圧縮は行いません。既に圧縮済みの音声なので、品質を変えずに大幅な容量削減ができるとはしていません。同じ保存曲を複数プレイリストから参照する既存の仕組みも維持します。0.2.2の再生時間修正を含みます。
+## 入れる方法（概要）
 
-**0.2.3の更新用IPAを生成しました。** [成功したビルド](https://github.com/iwamoto0414yuuki-droid/UTubeMusic/actions/runs/39218917599)。ネイティブ45件・Python19件の合計64件が成功。試聴の自動終了と元の再生への復帰、停止後の遅延応答の無効化、保存済み曲のオフライン試聴、不正な再生範囲と取得先の拒否を検証し、試聴ボタン・停止ボタン・バナーのネイティブ画像を確認しました。検証済みソースは `7822edaa3d0bd14779894648d7f03195b2ff3521`。実際のiPhoneとYouTube音声の実通信再生は未検証です。
+SideStore 経由で、無料の Apple Account を使って入れます。通常の7日更新も無料です（有料VPN契約は不要、LocalDevVPN を使用）。
 
-## 0.2.2：再生時間・後半無音の修正
+1. Windows で初期準備をし、SideStore Stable を iPhone に導入する
+2. GitHub Actions で生成した未署名IPA（`UTubeMusic-0.3.11-unsigned.ipa`）を iPhone の「ファイル」に置く
+3. SideStore の My Apps から追加し、起動・保存・機内モード再生などを確認する
 
-利用者から、0.1系では正常だったが0.2系では保存した全曲が約2倍の長さになり、後半が無音になるとの報告。0.1.0と0.2.1の差分では音声転送・保存時の長さ判定・PlayerStore本体に変更はなく、バージョン更新との直接の因果関係は未確定です。問題の実ファイルは未取得です。
+更新はアプリを削除せず、同じアプリIDへ上書きします。保存した曲・お気に入り・プレイリストは引き継がれます。
 
-追加の利用者情報では「保存した音声ファイルは正常で、アプリの再生時だけ長さが倍になる可能性」が示されました。従来はAVAssetのdurationを保存し、プレイヤーが索引内の値をそのまま表示・シーク範囲に採用していました。0.2.2はAVAudioFileの音声フレーム数から長さを独立に確認し、再生画面・ロック画面・シーク範囲・AVPlayerItemの再生終端を揃えます。旧索引の長さが誤っていても、再生時に再確認します。
+手順の詳細は [INSTALL_IPHONE.md](INSTALL_IPHONE.md) を参照してください。
 
-再現検証：合成した約3秒のAACを含むDASH M4Aで、iOSのAVURLAsset.durationが5.975328798185941秒を返しました。同じファイルをWindowsのFFmpegで実デコードした音声は3.0418秒でした。これは実際の利用者ファイルの解析ではありませんが、「音声データは正常でも、Apple側の時間解釈とアプリの登録値が約2倍になる」経路をネイティブテストで再現しています。
+## ビルドする方法
 
-既存の音声ファイルは書き換えず、索引の時間情報と再生側の終端だけを修正します。配信用M4AでAVAssetの長さが誤っていても、独立に測った実音声の長さを使います。音声の再圧縮・無音判定によるカット・再生時間の単純な半分への変更は行いません。
+公開リポジトリで標準の GitHub-hosted runner を使う構成で、有料の larger runner は使いません。
 
-既存曲はホームの設定 →「保存した曲の再生時間を修復」から端末内でまとめて修復できます。お気に入り・プレイリスト・曲順・追加日時・音声ファイルを維持します。索引保存の失敗時も元の曲を保持します。手動で読み込んだ音声ファイルは一括修復の対象外ですが、再生時の長さ確認は適用されます。
+1. このリポジトリをフォーク／クローンする
+2. Actions → `Build personal iPhone app (free standard runner)` → Run workflow（手動実行のみ、同時1件、最大30分）
+3. シミュレーターのビルドとテストを通してから、実機用ビルドを行う
+4. 成功時の成果物 `UTubeMusic-0.3.11-SideStore` からIPAとSHA256を取得する（Actions の保管期限は1日なので、手元にも保管を）
 
-**0.2.2の更新用IPAを生成しました。** [成功したビルド](https://github.com/iwamoto0414yuuki-droid/UTubeMusic/actions/runs/39216359426)。ネイティブ39件・Python16件の合計55件が成功。約2倍のコンテナ時間の再現、音声フレーム数による実長の取得、DASHの実終端での曲送り・1曲リピート、誤った旧索引の修復、音声ファイルの完全一致、メンバーシップ・追加日時の保持、索引書込失敗時の保護を検証しました。検証済みソースは `ae1d941abe7958b1a540b401a672bf9f879e9fdc`、修正ブランチは `fix/audio-duration-022`。実際の利用者ファイルの解析と更新後の実機確認は未実施です。
-
-## 0.2.1の状態
-
-ライブラリ一覧・お気に入りの曲・保存した曲・各プレイリストに「曲を追加」を設置。新曲の検索から保存へ進み、開いていたお気に入り・プレイリストを初期選択します。お気に入り／プレイリストでは「保存した曲から」も選択可能。追加済みのチェック表示で二重登録を防ぎ、元の音声ファイルやほかのプレイリストを保持します。曲が多い一覧では末尾にも入口を表示します。**0.2.1の更新用IPAを生成しました。** [成功したビルド](https://github.com/iwamoto0414yuuki-droid/UTubeMusic/actions/runs/39141350945)。ネイティブ31件・Python16件の合計47件が成功。追加先への登録時に、ファイル・元のプレイリスト・お気に入りの状態を保持すること、追加済みの二重登録と削除済み追加先を扱うことを検証しました。新たにお気に入り詳細・プレイリスト詳細・曲の追加検索・保存した曲から追加の4画面をネイティブ画像で取得。0.2.1の新機能は更新後の実機確認が必要です。
-
-## 0.2.0までの機能と検証
-
-0.1.0は利用者のiPhone 14 / iOS 27.0.1で導入・保存・再生、プレイリスト、バックグラウンド再生、再生モードの動作確認が報告されました。期限更新用ショートカットも利用者が設定済みです。これは利用者からの報告で、開発環境から端末を直接操作しての検証ではありません。
-
-**0.2.0の更新用IPAを生成しました。** [成功したビルド](https://github.com/iwamoto0414yuuki-droid/UTubeMusic/actions/runs/39140329345)。Python 16件、ネイティブ25件の合計41件に通過。テストログの失敗0件と `TEST SUCCEEDED`、スクロールの実移動を確認しています。
-
-- 再生バーと下部3タブは、画面の本文と並べて実際の高さを確保。NavigationStackの外から重なるsafeAreaInsetを廃止し、最下部までバウンド操作なしでスクロールできます。
-- ホームは、お気に入り・保存した曲・自分のプレイリストへすぐ戻れる配置。YouTube Musicのログイン不要の公開ホームからプレイリスト・アルバムの棚を取得します。
-- 検索に気分・ジャンル別の入口を移動。「曲・プレイリスト・アルバム」の3フィルター、さらに表示、追加読込失敗時の再試行。別タブを見ても検索状態を維持します。
-- 単曲・一括ともお気に入りを初期オン。複数プレイリストの選択・新規作成と同時追加ができます。「ライブラリのみ」という排他的な選択肢を撤去。
-- 公開プレイリスト・アルバムの詳細・収録順を表示し、まとめて保存。ローカルプレイリストに順序を保って追加し、既存曲は再ダウンロードしません。
-- 保存ジョブは1曲ずつ処理。個別／すべて中止、失敗時の再試行、部分完了の保持。1000曲を超えるリストは黙って切り捨てず分割を案内。
-- 組み込みCPython + yt-dlpが取得情報を解析、Swift URLSessionがAAC音声を転送・検証。再生可能なファイルだけを登録。
-- AVFoundationで端末内再生・Background Audio・ロック画面／イヤホン操作。順番・シャッフル・1曲／全曲リピート、キュー。
-- ライブラリ削除後の再保存、索引の原子的な保存、書込失敗時の巻き戻し、破損索引の保護。旧0.1.0の索引と互換性を維持。
-
-公開カタログの取得に非公式ライブラリytmusicapiを利用します。Googleログイン、ユーザーのCookie、課金API、常設サーバーは不要です。YouTube Musicの本人の履歴に基づく推薦を再現するものではありません。曲検索はYouTubeの検索結果のため、音楽以外が混じる場合があります。ログイン必須・ライブ・AACが取得できない曲は対象外です。取得中は画面を開いておき、保存後はオフライン／バックグラウンドで再生します。
-
-[導入・既存アプリの更新方法](INSTALL_IPHONE.md)に沿って、アプリを削除せず同じアプリIDへ更新します。
-
-## 無料でビルドする経路
-
-GitHub公式は、公開リポジトリで標準GitHub-hosted runnerを使うActions実行を無料と案内しています。**有料のlarger runnerは使いません。** 今回のワークフローは公開リポジトリの場合のみmacOSジョブを実行します。非公開リポジトリでは実行をスキップし、無料枠から有料利用へ流れる構成にしません。
-
-手動実行のみ、同時1件、最大30分。成果物の保持は1日、キャッシュは使いません。Actions / Packagesの保存枠も共有されるため、他のリポジトリを含めたアカウント全体の保存量と請求設定を実行前に確認します。今回の設定だけでアカウント全体の課金設定を変更することはできません。無料を条件として、枠超過で課金する設定にはしません。
-
-1. このフォルダーだけを新しいリポジトリのルートに置く。既存LocalTubeや親フォルダー全体をアップロードしない。
-2. ソースの公開について利用者の同意を得る。2026-10-18に本人の承認を得て、[UTubeMusic](https://github.com/iwamoto0414yuuki-droid/UTubeMusic) にソースのみを公開しました。曲・認証情報・既存LocalTubeのデータは含めません。
-3. Actions → `Build personal iPhone app (free standard runner)` → Run workflow。
-4. シミュレーターのビルド・ネイティブテストを通してから実機用ビルドを行う。
-5. 成功時の `UTubeMusic-0.2.3-SideStore` からIPAとSHA256を取得する。失敗はログを調べて修正し、成功するまで導入用として配布しない。0.2.3のソースは `feature/song-preview-023` ブランチです。
-
-出力: `build/UTubeMusic-0.2.3-unsigned.ipa`。Windowsへ取得した配布用コピーは `release/` に保存します。これは自分のApple AccountでSideStoreが署名する前のIPAです。署名証明書・パスワード・ペアリングファイルをCIへ送る必要はありません。成果物のActions保管期限は1日なので、取得したIPAを手元に保管してください。
-
-Macがある場合はXcodeとXcodeGenを用意して `bash scripts/build_ipa.sh` で同じビルドを実行できます。Windowsでは実行できません。
-
-## SideStoreで入れる
-
-**SideStore・LocalDevVPN・無料Apple Accountによる通常の7日更新は無料**です。一般の有料VPN契約は不要です。初期設定ではWindowsとUSBケーブルを使います。
-
-1. 公式手順に従いLocalDevVPNをApp Storeから導入。
-2. WindowsのiloaderとAppleの接続ソフトを用意し、USB接続、PCの信頼を行う。
-3. 本人がApple Accountへログインし、SideStore Stableを導入。
-4. iPhoneで開発者の信頼・Developer Modeを設定。これらの認証・端末設定は本人が行う。
-5. Wi-Fi + LocalDevVPN接続中にSideStoreを開き、最初にSideStore自身を更新。
-6. 成功したIPAをiPhoneの「ファイル」に置き、SideStoreのMy Appsの追加操作から選ぶ。
-7. 起動・曲の保存・機内モード再生・ロック中の連続再生を確認。
-
-通常の更新: Wi-Fi → LocalDevVPNオン → SideStore → My Apps → UTube MusicとSideStoreの期限を更新。通常7日が切れる前に行います。自動更新は毎回成功すると仮定しません。期限切れ時はアプリを削除せず再署名を検討し、ライブラリを保護します。SideStore自身の期限切れやペアリングの失効時にはWindowsからの復旧が必要になる場合があります。
+Mac がある場合は Xcode と XcodeGen を用意して `bash scripts/build_ipa.sh` でも同じビルドができます。Windows では実行できません。
 
 ## バックアップ
 
-「ファイル」→「このiPhone内」→「UTube Music」→「UTubeMusic」をフォルダーごと別の場所へコピーします。音声・画像・`library.json` をまとめて保管してください。アプリを終了してからコピー・復元します。`library.previous.json` は直前の索引です。誤削除に対する音声ファイルのごみ箱ではありません。
+「ファイル」→「このiPhone内」→「UTube Music」→「UTubeMusic」フォルダーを、アプリを終了してから丸ごと別の場所へコピーしてください。音声・画像・`library.json` がまとめて保管されます。`library.previous.json` は直前の索引で、誤削除用のごみ箱ではありません。
 
-## 検証
+## 検証について
 
-WindowsとCIでPythonのオフラインテスト16件に通過。WindowsでSwift構文・Python構文・YAML条件の検査を実施。実通信では公開ホームの6棚・57項目、アルバム検索とプレイリスト検索、各収録曲の取得を確認しました。音声はこの実通信テストではダウンロードしていません。日本語設定で検索結果が空になる上流パーサーの挙動を確認したため、ホームは日本語、検索・収録情報の解析は英語設定で扱います。元の曲名・アーティスト名を翻訳する処理はしません。
+- CI ではネイティブ／Python の自動テストと、iPhone 14 相当の画面キャプチャで表示を確認しています。バージョンごとのテスト件数・検証済みソース・未確認事項は [CHANGELOG.md](CHANGELOG.md) に記録しています
+- 自動テストで確認できる範囲と、iPhone 実機でしか確認できない範囲（実通信での長時間再生、日本語キーボード操作、聞こえ方など）は区別して記録しています。新機能は原則として「更新後に実機確認が必要」です
+- 画面のデザイン検討は [design/](design/) にあります（サンプルデータによるレイアウト確認用で、実際の取得・再生は行いません）
 
-```powershell
-python -m unittest discover -s tests_python -v
-```
+## 一次資料・依存
 
-macOS CIの25件に通過。組み込みPython・SSL・ctypes・WebKit・公開カタログライブラリの読み込み、キュー／リピート、索引保護、旧索引互換、複数プレイリストへの保存・アルバム順序、検索ページ追加・重複除外・検索競合を検証しました。
+- [GitHub Actions の無料条件と保存枠](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+- [SideStore の前提条件](https://docs.sidestore.io/docs/installation/prerequisites) / [導入手順](https://docs.sidestore.io/docs/installation/install) / [FAQ](https://docs.sidestore.io/docs/faq)
+- [LocalDevVPN（日本 App Store）](https://apps.apple.com/jp/app/localdevvpn/id6755608044)
+- [Python iOS 組み込み](https://docs.python.org/3.13/using/ios.html) / [Python Apple Support](https://github.com/beeware/Python-Apple-support)
+- [yt-dlp EJS](https://github.com/yt-dlp/yt-dlp/wiki/EJS) / [Apple WebKit 用の実験的プラグイン](https://github.com/grqz/yt-dlp-apple-webkit-jsi)
+- [Apple のバックグラウンド再生設定](https://developer.apple.com/documentation/avfoundation/configuring-your-app-for-media-playback)
+- [ytmusicapi の公開カタログ取得](https://ytmusicapi.readthedocs.io/en/stable/usage.html)
 
-画面は390×844（iPhone 14相当）のネイティブUIで描画し、1170×2532ピクセルの画像8枚を出力。再生バー表示中のスクロール領域と最下部のピアノボタンを実測し、無理な引っ張り操作をせずボタン全体がバーの上に収まることをテストしました。ホーム・検索・最下部・保存画面・ライブラリ・全面再生・アルバム詳細・一括保存の各画面を画像に出力。画面テストには生成した無音データと架空のカタログ情報を使い、実際の音楽をIPAに同梱しません。
-
-0.2.0は更新後に実機でも、保存済みデータの引き継ぎ、再生中の最下部の押しやすさ、追加検索、公開リストの一括保存を確認してください。シミュレーターでの検証と実機確認は別です。
-
-## デザイン
-
-`design/index.html` はサンプルデータの操作可能なレイアウト確認用です。実際の音楽取得・再生は行いません。ネイティブ画面と細部は異なります。`node design/serve.mjs` で `http://127.0.0.1:8876/` を開けます。主要操作は44pt以上、下部3タブ、上にミニプレイヤー、全面再生画面の中央に大きい再生ボタンを置きます。色はチャコール・アイボリー・コーラル。
-
-ネイティブのホーム・再生画面もシミュレーター上のテストで描画し、画像を成果物へ保存します。再生画面は画面の高さに合わせてジャケットサイズ・余白を変えます。実機の文字サイズ変更・VoiceOver・キーボード操作は引き続き確認が必要です。
-
-Google Stitchもブラウザで試しましたが、追加規約の同意画面で停止し、デザイン生成は実施していません。Stitchの生成物を使ったとは扱いません。
-
-## 一次資料
-
-- [GitHub Actionsの無料条件と保存枠](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
-- [SideStoreの前提条件](https://docs.sidestore.io/docs/installation/prerequisites)
-- [SideStore導入手順](https://docs.sidestore.io/docs/installation/install)
-- [SideStore FAQ](https://docs.sidestore.io/docs/faq)
-- [LocalDevVPN日本App Store掲載](https://apps.apple.com/jp/app/localdevvpn/id6755608044)
-- [Python iOS組み込み](https://docs.python.org/3.13/using/ios.html)
-- [Python Apple Support](https://github.com/beeware/Python-Apple-support)
-- [yt-dlp EJS](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
-- [Apple WebKit用の実験的プラグイン](https://github.com/grqz/yt-dlp-apple-webkit-jsi)
-- [Appleのバックグラウンド再生設定](https://developer.apple.com/documentation/avfoundation/configuring-your-app-for-media-playback)
-
-依存はバージョンとSHA256を固定。Python-Apple-support 3.13-b14 / yt-dlp 2026.8.19 / yt-dlp-ejs 0.8.0 / certifi 2026.7.22 / WebKit plugin 0.1.1。上流の変更対応はハッシュと互換性を確認して更新します。権利・許可のあるコンテンツを対象にしてください。
-
-- [ytmusicapiの公開カタログ取得](https://ytmusicapi.readthedocs.io/en/stable/usage.html)
-- [ホーム・アルバム取得](https://ytmusicapi.readthedocs.io/en/stable/reference/browsing.html)
-
-0.2.0検証済みソース: `bbab3fc48d877682ab701917c52b59e0883bcc45`。追加の公開カタログ依存も `Python/requirements.lock` で純PythonホイールとSHA256を固定しています。
-
-0.2.1の検証済みソース: `78891ba9b0dd83b5b2ac1813dc899883cdc99f1d`。バンドルID・保存フォルダーは継続し、同じアプリへ上書きする更新用IPAです。
+依存はバージョンと SHA256 を固定しています（Python-Apple-support 3.13-b14 / yt-dlp 2026.8.19 / yt-dlp-ejs 0.8.0 / certifi 2026.7.22 / WebKit plugin 0.1.1）。公開カタログの取得に非公式ライブラリ ytmusicapi を利用します。Google ログイン、ユーザーの Cookie、課金API、常設サーバーは不要です。権利・許可のあるコンテンツを対象にしてください。

@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct NowPlayingView: View {
     @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var library: LibraryStore
@@ -8,6 +9,13 @@ struct NowPlayingView: View {
     @State private var scrubbing = false
     @State private var showQueue = false
     @State private var showActions = false
+    @State private var showLyrics = false
+    @StateObject private var lyrics: LyricsStore
+
+    init(lyrics: LyricsStore? = nil) {
+        _lyrics = StateObject(wrappedValue: lyrics ?? LyricsStore())
+    }
+
     var body: some View {
         GeometryReader { geo in
             ScrollView {
@@ -17,7 +25,7 @@ struct NowPlayingView: View {
                         Spacer()
                         VStack(spacing: 4) {
                             Text("NOW PLAYING").font(.system(size: 10, weight: .bold)).tracking(2.2)
-                            Text("このiPhoneのライブラリ").font(.caption2).foregroundStyle(Palette.secondary)
+                            Text(player.playbackSource.title).font(.caption2).lineLimit(1).foregroundStyle(Palette.secondary)
                         }
                         Spacer()
                         IconButton(symbol: "ellipsis", label: "曲のメニュー") { showActions = true }
@@ -31,7 +39,7 @@ struct NowPlayingView: View {
                                 Text(song.artist).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(1)
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             let favorite = library.song(song.id)?.favorite == true
-                            IconButton(symbol: favorite ? "heart.fill" : "heart", label: favorite ? "お気に入りから外す" : "お気に入りに追加", color: favorite ? Palette.accent : Palette.text, size: 24) { library.toggleFavorite(song.id) }
+                            IconButton(symbol: favorite ? "heart.fill" : "heart", label: favorite ? "お気に入りから外す" : "お気に入りに追加", color: favorite ? Palette.accent : Palette.text, size: 24) { library.toggleFavorite(song) }
                         }
                         VStack(spacing: 0) {
                             Slider(value: $position, in: 0...max(1, player.duration)) { editing in
@@ -48,20 +56,24 @@ struct NowPlayingView: View {
                             IconButton(symbol: "backward.end.fill", label: "前の曲", size: 29) { player.previous() }
                             Spacer(minLength: 0)
                             Button { player.toggle() } label: {
-                                Image(systemName: player.playing ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 29, weight: .semibold)).offset(x: player.playing ? 0 : 2)
+                                Image(systemName: player.playbackButtonSymbol)
+                                    .font(.system(size: 29, weight: .semibold)).offset(x: player.playbackButtonSymbol == "pause.fill" ? 0 : 2)
                                     .foregroundStyle(.black).frame(width: 76, height: 76).background(Palette.text, in: Circle())
-                            }.buttonStyle(.plain).accessibilityLabel(player.playing ? "一時停止" : "再生")
+                            }.buttonStyle(.plain).accessibilityLabel(player.playbackButtonLabel)
                             Spacer(minLength: 0)
                             IconButton(symbol: "forward.end.fill", label: "次の曲", size: 29) { player.next() }
                             Spacer(minLength: 0)
                             IconButton(symbol: player.queue.repeatMode.symbol, label: player.queue.repeatMode.label + "・切り替え", color: player.queue.repeatMode == .off ? Palette.secondary : Palette.accent) { player.toggleRepeat() }
                         }
                         HStack {
-                            Label("オフラインで再生", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(Palette.secondary)
+                            Label(library.isAvailable(song) ? "オフラインで再生" : player.resolvingOnline ? "再生を準備中…" : player.buffering ? "通信待ち…" : player.alternateAudioID != nil ? "公式音源版で再生" : "オンラインで再生", systemImage: library.isAvailable(song) ? "checkmark.circle.fill" : "antenna.radiowaves.left.and.right").font(.caption).foregroundStyle(Palette.secondary)
                             Spacer()
                             IconButton(symbol: "list.bullet", label: "再生キュー") { showQueue = true }
                         }.padding(.top, 4)
+                        if song.hasYouTubeSource {
+                            LyricsCard(state: player.lyricsSongID.map { lyrics.state(for: $0) } ?? .loading, elapsed: player.elapsed) { showLyrics = true }
+                                .id(song.id)
+                        }
                     } else {
                         EmptyPanel(symbol: "music.note", title: "再生する曲を選んでください", detail: "保存した曲をライブラリから選べます。")
                     }
@@ -72,14 +84,20 @@ struct NowPlayingView: View {
             .onAppear { position = player.elapsed }
             .onChange(of: player.elapsed) { _, value in if !scrubbing { position = value } }
             .sheet(isPresented: $showQueue) { QueueView() }
-            .sheet(isPresented: $showActions) { if let song = player.current { SongActionsSheet(song: song) } }
+            .sheet(isPresented: $showActions) {
+                if let song = player.current {
+                    if let saved = library.song(song.id) { SongActionsSheet(song: saved) }
+                    else { SaveSongSheet(song: song) }
+                }
+            }
+            .onChange(of: player.lyricsSongID, initial: true) { _, id in lyrics.load(id) }
+            .fullScreenCover(isPresented: $showLyrics) { LyricsView(lyrics: lyrics) }
             .appFeedback()
     }
 }
 
 struct QueueView: View {
     @EnvironmentObject private var player: PlayerStore
-    @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
@@ -90,7 +108,7 @@ struct QueueView: View {
                 Section("次に再生") {
                     if player.queue.upcoming.isEmpty { Text("次の曲はありません").foregroundStyle(Palette.secondary) }
                     ForEach(player.queue.upcoming, id: \.self) { id in
-                        if let song = library.song(id) {
+                        if let song = player.queuedSong(id) {
                             HStack(spacing: 12) {
                                 SongArtwork(song: song, size: 44)
                                 VStack(alignment: .leading, spacing: 5) { Text(song.title).font(.subheadline); Text(song.artist).font(.caption).foregroundStyle(Palette.secondary) }

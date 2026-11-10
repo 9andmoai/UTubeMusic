@@ -22,7 +22,7 @@ enum SongAddDestination: Equatable {
         }
     }
     @MainActor func add(_ song: Song, to library: LibraryStore) throws {
-        guard var existing = library.song(song.id), library.isAvailable(existing) else {
+        guard var existing = library.song(song.id), library.isPlayable(existing) else {
             throw AppFailure("曲を保存してから追加してください。")
         }
         switch self {
@@ -44,7 +44,7 @@ struct AddSongsLink: View {
             Label("曲を追加", systemImage: "plus.circle")
                 .font(.subheadline.bold()).foregroundStyle(Palette.text)
                 .frame(maxWidth: .infinity, minHeight: 50)
-                .background(Palette.raised, in: Capsule())
+                .background(Palette.raised, in: Capsule()).contentShape(Capsule())
         }.buttonStyle(.plain).accessibilityIdentifier("add-songs-link")
     }
 }
@@ -65,13 +65,14 @@ struct AddSongsView: View {
         _mode = State(initialValue: initialMode)
     }
     private var savedSongs: [Song] {
-        let available = library.songs.filter(library.isAvailable)
+        let available = library.songs.filter(library.isPlayable)
         let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? available : available.filter { $0.title.localizedCaseInsensitiveContains(value) || $0.artist.localizedCaseInsensitiveContains(value) }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
+                if !focused {
                 Text("追加先：" + destination.name(in: library)).font(.subheadline.bold()).lineLimit(2)
                 if destination != .library {
                     Picker("曲の探し方", selection: $mode) {
@@ -79,6 +80,8 @@ struct AddSongsView: View {
                         Text("保存した曲から").tag(1)
                     }.pickerStyle(.segmented).accessibilityIdentifier("add-songs-mode")
                 }
+                }
+                HStack(spacing: 8) {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Palette.secondary)
                     TextField(mode == 0 ? "曲名、アーティスト、曲のリンク" : "保存した曲を絞り込む", text: $query)
@@ -89,11 +92,13 @@ struct AddSongsView: View {
                     }
                 }.padding(.leading, 14).padding(.trailing, 4).frame(minHeight: 52)
                     .background(Palette.raised, in: RoundedRectangle(cornerRadius: 13))
-                if mode == 0 {
+                if focused { TextActionButton("完了") { focused = false } }
+                }
+                if mode == 0 && !focused {
                     HStack {
                         Text("見つけた曲を、この追加先に保存").font(.caption).foregroundStyle(Palette.secondary)
                         Spacer()
-                        Button("検索", action: submit).font(.subheadline.bold()).frame(minHeight: 44)
+                        TextActionButton("検索", action: submit)
                     }
                 }
             }.padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 8)
@@ -101,7 +106,8 @@ struct AddSongsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         Color.clear.frame(height: 0).id("add-top")
-                        if mode == 1 {
+                        if mode == 0 && focused { SearchSuggestions(query: query) { query = $0; submit() } }
+                        else if mode == 1 {
                             if savedSongs.isEmpty {
                                 EmptyPanel(symbol: "music.note.list", title: "曲がありません", detail: "「新しい曲を検索」から曲を探して保存できます。")
                             }
@@ -113,11 +119,13 @@ struct AddSongsView: View {
                             SongSearchResults(search: search, destination: destination)
                         }
                     }.padding(.horizontal, 20).padding(.bottom, 32)
-                }.scrollDismissesKeyboard(.interactively)
+                }.scrollDismissesKeyboard(focused ? .never : .interactively)
                     .onChange(of: generation) { _, _ in proxy.scrollTo("add-top", anchor: .top) }
+                    .onChange(of: focused) { _, value in if value { proxy.scrollTo("add-top", anchor: .top) } }
                     .onChange(of: mode) { _, _ in focused = false; proxy.scrollTo("add-top", anchor: .top) }
             }
         }.background(Palette.background).foregroundStyle(Palette.text)
+            .preference(key: SearchEditingPreference.self, value: focused)
             .navigationTitle("曲を追加").navigationBarTitleDisplayMode(.inline)
             .toolbar(.visible, for: .navigationBar).toolbarBackground(Palette.background, for: .navigationBar)
             .task(id: generation) { await search.search(submitted) }

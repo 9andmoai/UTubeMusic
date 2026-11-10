@@ -6,6 +6,7 @@ struct AudioTiming {
 
     /// Count audio frames independently of the movie/container duration and saved index.
     static func read(_ url: URL) async throws -> AudioTiming {
+        try Task.checkCancellation()
         let work = Task.detached(priority: .userInitiated) { () async throws -> AudioTiming in
             try Task.checkCancellation()
             let file = try AVAudioFile(forReading: url)
@@ -19,6 +20,10 @@ struct AudioTiming {
             guard duration.isFinite, duration > 0 else { throw AppFailure("音声の再生時間を確認できません。") }
             return AudioTiming(duration: duration, containerDuration: containerDuration)
         }
-        return try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+        return try await withTaskCancellationHandler {
+            let timing = try await work.value
+            try Task.checkCancellation()
+            return timing
+        } onCancel: { work.cancel() }
     }
 }
