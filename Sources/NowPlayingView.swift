@@ -25,7 +25,7 @@ struct NowPlayingView: View {
                         Spacer()
                         VStack(spacing: 4) {
                             Text("NOW PLAYING").font(.system(size: 10, weight: .bold)).tracking(2.2)
-                            Text(player.searchPlayback ? "検索結果" : "このiPhoneのライブラリ").font(.caption2).foregroundStyle(Palette.secondary)
+                            Text(player.playbackSource.title).font(.caption2).lineLimit(1).foregroundStyle(Palette.secondary)
                         }
                         Spacer()
                         IconButton(symbol: "ellipsis", label: "曲のメニュー") { showActions = true }

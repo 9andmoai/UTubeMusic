@@ -136,6 +136,7 @@ struct BatchSaveSheet: View {
 
 struct SongActionsSheet: View {
     let song: Song
+    var playFromContext: (() -> Void)? = nil
     @EnvironmentObject private var music: MusicService
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerStore
@@ -161,7 +162,12 @@ struct SongActionsSheet: View {
                         Label("ダウンロードだけ削除", systemImage: "arrow.down.circle")
                     }.accessibilityIdentifier("remove-download")
                 }
-                Button { player.start(library.songs, at: song); dismiss() } label: { Label("再生", systemImage: "play.fill") }.disabled(!library.isPlayable(song))
+                Button {
+                    if let playFromContext { playFromContext() }
+                    else { player.start(library.songs, at: song) }
+                    dismiss()
+                } label: { Label("再生", systemImage: "play.fill") }
+                    .disabled(playFromContext == nil && !library.isPlayable(song))
                 Button { player.enqueue(song); dismiss() } label: { Label("再生キューに追加", systemImage: "text.line.first.and.arrowtriangle.forward") }.disabled(!library.isPlayable(song))
                 Button { editIntro = true } label: {
                     Label("冒頭の無音をスキップ", systemImage: "forward.frame")
@@ -306,7 +312,7 @@ struct SettingsView: View {
                         .font(.subheadline).foregroundStyle(Palette.secondary)
                 }
                 Section {
-                    LabeledContent("バージョン", value: "0.3.10 開発版")
+                    LabeledContent("バージョン", value: "0.3.11 開発版")
                     Text("個人用の音楽ライブラリ。曲の取得はYouTubeの仕様や制限により失敗する場合があります。")
                         .font(.caption).foregroundStyle(Palette.secondary)
                     Text("Python / yt-dlp / yt-dlp-ejs / certifi / yt-dlp-apple-webkit-jsi / ytmusicapi / requests を使用。ライセンスはアプリ内の同梱ファイル ThirdPartyNotices を参照。")

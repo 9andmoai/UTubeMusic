@@ -2,6 +2,18 @@ import AVFoundation
 import MediaPlayer
 import UIKit
 
+enum PlaybackSource: Equatable {
+    case library, search, collection(String)
+
+    var title: String {
+        switch self {
+        case .library: return "このiPhoneのライブラリ"
+        case .search: return "検索結果"
+        case .collection(let title): return title
+        }
+    }
+}
+
 @MainActor
 final class PlayerStore: ObservableObject {
     @Published private(set) var current: Song?
@@ -9,9 +21,9 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var elapsed: Double = 0
     @Published private(set) var duration: Double = 0
     @Published private(set) var queue = PlaybackQueue()
-    @Published private(set) var searchPlayback = false
+    @Published private(set) var playbackSource = PlaybackSource.library
     @Published private(set) var resolvingOnline = false
-    private var searchSongs: [String: Song] = [:]
+    private var catalogSongs: [String: Song] = [:]
     @Published var error: String?
     @Published var normalizeVolume = UserDefaults.standard.object(forKey: "normalizeVolume") as? Bool ?? true {
         didSet {
@@ -138,11 +150,11 @@ final class PlayerStore: ObservableObject {
         })
         configureCommands()
     }
-    func start(_ songs: [Song], at song: Song, shuffle: Bool = false, fromSearch: Bool = false) {
+    func start(_ songs: [Song], at song: Song, shuffle: Bool = false, source: PlaybackSource = .library) {
         let available = songs.compactMap { candidate -> Song? in
             let saved = library.song(candidate.id)
             if let saved, library.isPlayable(saved) { return saved }
-            if fromSearch, candidate.hasYouTubeSource {
+            if source != .library, candidate.hasYouTubeSource {
                 var stream = candidate
                 stream.onlineOnly = true
                 return stream
@@ -153,8 +165,8 @@ final class PlayerStore: ObservableObject {
             error = "音声ファイルが見つかりません。検索からオンライン再生を試してください。"
             return
         }
-        searchSongs = fromSearch ? Dictionary(available.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
-        searchPlayback = fromSearch
+        catalogSongs = source != .library ? Dictionary(available.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
+        playbackSource = source
         error = nil
         queue.start(available.map(\.id), at: song.id, shuffle: shuffle)
         load(selected)
@@ -162,7 +174,7 @@ final class PlayerStore: ObservableObject {
 
     func queuedSong(_ id: String) -> Song? {
         if let saved = library.song(id), library.isPlayable(saved) { return saved }
-        return searchSongs[id]
+        return catalogSongs[id]
     }
     private var currentStartOffset: Double {
         guard let current else { return 0 }
@@ -260,7 +272,7 @@ final class PlayerStore: ObservableObject {
     }
     func remove(_ id: String) {
         let wasCurrent = current?.id == id
-        searchSongs.removeValue(forKey: id)
+        catalogSongs.removeValue(forKey: id)
         queue.remove(id)
         if wasCurrent {
             introTask?.cancel(); preparingIntro = false; resetStartPreparation(); pause(); volumeTask?.cancel(); preparingVolume = false; player.replaceCurrentItem(with: nil); current = nil; elapsed = 0; duration = 0
@@ -420,9 +432,9 @@ final class PlayerStore: ObservableObject {
                             self.alternateIntroOffset = result
                         } else {
                             self.current?.detectedIntroSeconds = result
-                            if var candidate = self.searchSongs[song.id] {
+                            if var candidate = self.catalogSongs[song.id] {
                                 candidate.detectedIntroSeconds = result
-                                self.searchSongs[song.id] = candidate
+                                self.catalogSongs[song.id] = candidate
                             }
                             try? self.library.cacheDetectedIntro(song.id, seconds: result, fileName: nil)
                         }

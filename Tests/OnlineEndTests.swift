@@ -82,9 +82,9 @@ final class OnlineEndTests: XCTestCase {
     func testSearchStreamsUnsavedTracksThroughTheirRealEndWithoutSaving() async throws {
         let (library, player, songs, _, actual, items) = try await setup(saved: false)
         defer { player.pause() }
-        player.start(songs, at: songs[0], fromSearch: true)
+        player.start(songs, at: songs[0], source: .search)
         try await wait { player.playing && items().last?.status == .readyToPlay }
-        XCTAssertTrue(player.searchPlayback)
+        XCTAssertEqual(player.playbackSource, .search)
         XCTAssertEqual(player.queuedSong(songs[1].id)?.title, songs[1].title)
         XCTAssertTrue(library.songs.isEmpty)
         player.seek(actual - 0.25)
@@ -93,6 +93,37 @@ final class OnlineEndTests: XCTestCase {
         library.toggleFavorite(songs[1])
         XCTAssertEqual(library.favorites.map(\.id), [songs[1].id])
         XCTAssertNil(library.song(songs[1].id)?.fileName)
+    }
+
+    func testPublicCollectionPlaysFromChosenTrackAndShufflesWholeListWithoutSaving() async throws {
+        let (library, player, songs, file, actual, items) = try await setup(count: 3, saved: false)
+        defer { player.pause() }
+        var downloaded = songs[0]
+        downloaded.fileName = file.lastPathComponent
+        downloaded.duration = actual
+        downloaded.audioTimingVersion = 1
+        try library.save(downloaded, playlistIDs: [])
+        let index = library.root.appendingPathComponent("library.json")
+        let before = try Data(contentsOf: index)
+        let source = PlaybackSource.collection("秋の曲")
+
+        player.start(songs, at: songs[0], source: source)
+        XCTAssertEqual(player.current?.fileName, downloaded.fileName)
+        XCTAssertTrue(items().isEmpty, "Use the downloaded file without resolving an online stream")
+        XCTAssertEqual(player.queue.upcoming, [songs[1].id, songs[2].id])
+
+        player.start(songs, at: songs[1], source: source)
+        try await wait { player.playing && items().last?.status == .readyToPlay }
+        XCTAssertEqual(player.playbackSource, source)
+        XCTAssertEqual(player.queue.upcoming, [songs[2].id])
+        player.seek(actual - 0.25)
+        try await wait { player.current?.id == songs[2].id && player.playing }
+
+        player.start(songs, at: songs[1], shuffle: true, source: source)
+        XCTAssertTrue(player.queue.shuffled)
+        XCTAssertEqual(player.queue.current, songs[1].id)
+        XCTAssertEqual(Set(player.queue.upcoming), Set([songs[0].id, songs[2].id]))
+        XCTAssertEqual(try Data(contentsOf: index), before)
     }
 
     func testOfficialAudioKeepsOriginalLibraryAndQueueIdentity() async throws {

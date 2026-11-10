@@ -104,7 +104,7 @@ struct SongSearchResults: View {
                         } more: { save = song }
                     } else {
                         SongRow(song: existing ?? song, actionLabel: "\(song.title)を再生") {
-                            player.start(search.results, at: song, fromSearch: true)
+                            player.start(search.results, at: song, source: .search)
                         } more: {
                             if let existing { menu = existing } else { save = song }
                         }
@@ -164,6 +164,11 @@ struct RemoteCollectionView: View {
         _store = StateObject(wrappedValue: store ?? CatalogStore())
     }
     private var displayed: CatalogItem { store.collection ?? item }
+
+    private func play(_ song: Song, shuffle: Bool = false) {
+        player.start(store.songs, at: song, shuffle: shuffle, source: .collection(displayed.title))
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -176,28 +181,39 @@ struct RemoteCollectionView: View {
                     PrimaryButton(title: "もう一度読み込む") { Task { await store.open(item) } }
                 } else {
                     Text("\(store.songs.count)曲 · " + Song.clock(store.songs.reduce(0) { $0 + $1.duration })).font(.caption).foregroundStyle(Palette.secondary)
-                    PrimaryButton(title: "まとめて追加", symbol: "arrow.down.circle") { confirm = true }.disabled(store.songs.isEmpty || library.recoveryNeeded)
-                    Text("曲の情報だけ追加するか、音声もダウンロードするか選べます。")
-                        .font(.caption).foregroundStyle(Palette.secondary).lineSpacing(3)
-                    if store.unavailable > 0 { Text("非公開・再生不可・重複などの\(store.unavailable)件は一覧から除外しています。") .font(.caption).foregroundStyle(Palette.secondary) }
-                    ForEach(store.songs) { song in
-                        let existing = library.song(song.id)
-                        let available = existing.map(library.isPlayable) ?? false
-                        SongRow(song: song, trailing: available ? "ellipsis" : "plus.circle", allowsPreview: true) {
-                            if let existing, available { player.start(store.songs.compactMap { library.song($0.id) }.filter(library.isPlayable), at: existing) }
-                            else { save = song }
-                        } more: { if let existing, available { menu = existing } else { save = song } }
+                    if let first = store.songs.first {
+                        HStack(spacing: 12) {
+                            PrimaryButton(title: "先頭から再生", symbol: "play.fill") { play(first) }
+                                .accessibilityIdentifier("collection-play")
+                            IconButton(symbol: "shuffle", label: "シャッフル再生", color: Palette.accent, size: 22) {
+                                if let song = store.songs.randomElement() { play(song, shuffle: true) }
+                            }.accessibilityIdentifier("collection-shuffle")
+                        }
+                        Button { confirm = true } label: {
+                            Label("まとめて追加", systemImage: "plus.circle")
+                                .font(.subheadline.bold()).frame(minHeight: 44).contentShape(Rectangle())
+                        }.buttonStyle(.plain).disabled(library.recoveryNeeded)
                     }
-                    if store.songs.isEmpty { EmptyPanel(symbol: "music.note", title: "保存できる曲がありません", detail: "公開状態や地域によって収録曲を取得できない場合があります。") }
+                    if store.unavailable > 0 { Text("非公開・再生不可・重複などの\(store.unavailable)件は一覧から除外しています。") .font(.caption).foregroundStyle(Palette.secondary) }
+                    LazyVStack(spacing: 4) {
+                        ForEach(store.songs) { song in
+                            let existing = library.song(song.id)
+                            SongRow(song: existing ?? song, actionLabel: "\(song.title)を再生") {
+                                play(song)
+                            } more: {
+                                if let existing { menu = existing } else { save = song }
+                            }
+                        }
+                    }
+                    if store.songs.isEmpty { EmptyPanel(symbol: "music.note", title: "再生できる曲がありません", detail: "公開状態や地域によって収録曲を取得できない場合があります。") }
                 }
             }.padding(20).padding(.bottom, 16)
         }.background(Palette.background).foregroundStyle(Palette.text)
             .toolbar(.visible, for: .navigationBar).toolbarBackground(Palette.background, for: .navigationBar)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { IconButton(symbol: "arrow.down.circle", label: "保存の状況") { showDownloads = true } } }
             .task { if !store.loaded { await store.open(item) } }
-            .onDisappear { player.preview.stop() }
-            .onChange(of: save?.id) { _, value in if value != nil { player.preview.stop() } }
-            .sheet(item: $save) { SaveSongSheet(song: $0) }.sheet(item: $menu) { SongActionsSheet(song: $0) }
+            .sheet(item: $save) { SaveSongSheet(song: $0) }
+            .sheet(item: $menu) { song in SongActionsSheet(song: song, playFromContext: { play(song) }) }
             .sheet(isPresented: $showDownloads) { DownloadsView() }
             .sheet(isPresented: $confirm, onDismiss: {
                 if batchQueued { batchQueued = false; showDownloads = true }
