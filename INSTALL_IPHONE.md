@@ -1,3 +1,7 @@
+# 0.4.1 検索とライブラリの統合
+
+SideStoreで UTubeMusic-0.4.1-unsigned.ipa を上書きします。Apple Watchも使用する場合は、Watch対応の改修版SideStoreで UTubeMusic-0.4.1-Watch-unsigned.ipa を選びます。
+
 # 0.4.0 フォローとApple Watch
 
 - iPhoneで使う場合は `UTubeMusic-0.4.0-unsigned.ipa` をSideStoreで上書きします。
