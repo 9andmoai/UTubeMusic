@@ -7,6 +7,7 @@ struct RootView: View {
     @EnvironmentObject private var music: MusicService
     @State private var tab = 0
     @State private var query = ""
+    @State private var initialSearchKind = "songs"
     @State private var searchToken = UUID()
     @StateObject private var homeCatalog: CatalogStore
     @StateObject private var searchState: SearchScreenState
@@ -28,8 +29,7 @@ struct RootView: View {
                 Group {
                     switch tab {
                     case 1: searchScreen
-                    case 2: LibraryView()
-                    case 3: FollowsView()
+                    case 2: LibraryView(openFollowSearch: { runSearch("", kind: $0) })
                     default: homeScreen
                     }
                 }
@@ -55,10 +55,10 @@ struct RootView: View {
         }
     }
     private var homeScreen: some View {
-        HomeScreenView(openSearch: runSearch, openDownloads: { showDownloads = true }, openSettings: { showSettings = true }, catalog: homeCatalog)
+        HomeScreenView(openSearch: { runSearch($0) }, openDownloads: { showDownloads = true }, openSettings: { showSettings = true }, catalog: homeCatalog)
     }
     private var searchScreen: some View {
-        SearchScreenView(initialQuery: query, token: searchToken, openDownloads: { showDownloads = true }, state: searchState)
+        SearchScreenView(initialQuery: query, initialKind: initialSearchKind, token: searchToken, openDownloads: { showDownloads = true }, state: searchState)
     }
     private var bottomBar: some View {
         VStack(spacing: 0) {
@@ -87,7 +87,6 @@ struct RootView: View {
             HStack(spacing: 0) {
                 tabButton(0, title: "ホーム", icon: "house", selected: "house.fill")
                 tabButton(1, title: "検索", icon: "magnifyingglass", selected: "magnifyingglass")
-                tabButton(3, title: "フォロー", icon: "dot.radiowaves.left.and.right", selected: "dot.radiowaves.left.and.right")
                 tabButton(2, title: "ライブラリ", icon: "square.stack", selected: "square.stack.fill")
             }.padding(.top, 6).padding(.bottom, 2)
         }.foregroundStyle(Palette.text).background(Palette.background).accessibilityIdentifier("bottom-player-bar")
@@ -100,5 +99,10 @@ struct RootView: View {
             }.foregroundStyle(tab == index ? Palette.text : Palette.secondary).frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityAddTraits(tab == index ? .isSelected : [])
     }
-    private func runSearch(_ value: String) { query = value; tab = 1; searchToken = UUID() }
+    private func runSearch(_ value: String, kind: String = "songs") {
+        query = value
+        initialSearchKind = kind
+        searchToken = UUID()
+        tab = 1
+    }
 }

@@ -18,7 +18,11 @@ struct LibraryView: View {
     @State private var showResult = false
     @State private var resultText = ""
     @State private var removalTask: Task<Void, Never>?
-    init(initialFilter: Int = 0, initialSelection: Bool = false, initialSelectedIDs: Set<String> = []) {
+    private let openFollowSearch: ((String) -> Void)?
+
+    init(initialFilter: Int = 0, initialSelection: Bool = false, initialSelectedIDs: Set<String> = [],
+         openFollowSearch: ((String) -> Void)? = nil) {
+        self.openFollowSearch = openFollowSearch
         _filter = State(initialValue: initialFilter)
         _selecting = State(initialValue: initialSelection)
         _chosen = State(initialValue: initialSelectedIDs)
@@ -214,11 +218,8 @@ struct LibraryView: View {
                        detail: text.isEmpty ? "フォローするとここに表示されます。" : "検索する名前を変えてください。")
         }
         ForEach(visibleFollows) { FollowLink(source: $0, size: 62) }
-        if showsFollowsOnly && text.isEmpty {
-            NavigationLink {
-                FollowsView(initialKind: filter == 5 ? "artist" : "podcast")
-                    .toolbar(.visible, for: .navigationBar)
-            } label: {
+        if showsFollowsOnly && text.isEmpty, let openFollowSearch {
+            Button { openFollowSearch(filter == 5 ? "artist" : "podcast") } label: {
                 Label(filter == 5 ? "アーティストを探す" : "ポッドキャストを探す", systemImage: "magnifyingglass")
                     .font(.subheadline.bold()).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                     .contentShape(Rectangle())

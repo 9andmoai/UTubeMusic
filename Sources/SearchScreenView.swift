@@ -16,10 +16,19 @@ final class SearchScreenState: ObservableObject {
 
 struct SearchScreenView: View {
     let initialQuery: String
+    var initialKind = "songs"
     let token: UUID
     let openDownloads: () -> Void
     @ObservedObject var state: SearchScreenState
     @FocusState private var searchFocused: Bool
+    private var searchesFollows: Bool { state.kind == "podcast" || state.kind == "artist" }
+    private var queryHint: String {
+        switch state.kind {
+        case "podcast": return "番組名・配信元名"
+        case "artist": return "アーティスト名"
+        default: return "曲名、アーティスト、YouTubeリンク"
+        }
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !searchFocused {
@@ -32,7 +41,7 @@ struct SearchScreenView: View {
             HStack(spacing: 8) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Palette.secondary)
-                TextField("曲名、アーティスト、YouTubeリンク", text: $state.query)
+                TextField(queryHint, text: $state.query)
                     .focused($searchFocused)
                     .accessibilityIdentifier("main-search-field")
                     .font(.subheadline).autocorrectionDisabled().textInputAutocapitalization(.never).submitLabel(.search).onSubmit(submit)
@@ -45,20 +54,34 @@ struct SearchScreenView: View {
             }.padding(.horizontal, 20).padding(.top, searchFocused ? 8 : 0)
             if !searchFocused {
             HStack {
-                Text("曲名・アーティスト・プレイリストのリンク").font(.caption2).foregroundStyle(Palette.secondary)
+                Text(searchesFollows ? queryHint : "曲名・アーティスト・プレイリストのリンク").font(.caption2).foregroundStyle(Palette.secondary)
                 Spacer()
                 TextActionButton("検索", action: submit)
             }.padding(.horizontal, 22)
-            HStack(spacing: 8) {
-                chip("曲", value: "songs"); chip("プレイリスト", value: "playlists"); chip("アルバム", value: "albums")
-            }.padding(.horizontal, 20).padding(.bottom, 12)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        chip("曲", value: "songs"); chip("プレイリスト", value: "playlists")
+                        chip("アルバム", value: "albums"); chip("ポッドキャスト", value: "podcast")
+                        chip("アーティスト", value: "artist")
+                    }.padding(.horizontal, 20)
+                }.onChange(of: state.kind, initial: true) { _, kind in proxy.scrollTo(kind, anchor: .center) }
+            }.padding(.bottom, 12)
             }
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         Color.clear.frame(height: 0).id("results-top")
-                        if searchFocused { SearchSuggestions(query: state.query, request: state.suggestionRequest) { state.query = $0; submit() } }
-                        else if state.submitted.isEmpty {
+                        if searchFocused {
+                            if searchesFollows {
+                                Text(queryHint + "を入力して検索してください").font(.caption).foregroundStyle(Palette.secondary)
+                            } else {
+                                SearchSuggestions(query: state.query, request: state.suggestionRequest) { state.query = $0; submit() }
+                            }
+                        } else if state.submitted.isEmpty && searchesFollows {
+                            EmptyPanel(symbol: state.kind == "artist" ? "music.mic" : "dot.radiowaves.left.and.right",
+                                       title: queryHint + "で探す", detail: "フォローした項目はライブラリから開けます。")
+                        } else if state.submitted.isEmpty {
                             SectionTitle(title: "今の気分から探す", caption: "ジャンルを選んで、好きな音楽へ")
                             BrowseGenres { state.query = $0; state.kind = "songs"; submit() }
                             Text("公開プレイリスト・アルバムも検索できます。YouTube Musicの共有リンクは、上の検索欄に貼り付けてください。")
@@ -68,6 +91,8 @@ struct SearchScreenView: View {
                                 Label("プレイリスト・アルバムを開く", systemImage: "rectangle.stack.fill").font(.headline)
                                     .padding(20).frame(maxWidth: .infinity).background(Palette.surface, in: RoundedRectangle(cornerRadius: 14))
                             }
+                        } else if searchesFollows {
+                            FollowSearchResults(query: state.submitted, kind: state.kind).id(state.generation)
                         } else if state.kind == "songs" { SongSearchResults(search: state.search) }
                         else { CatalogSearchResults(store: state.catalog) }
                     }.padding(.horizontal, 20).padding(.bottom, 32)
@@ -79,12 +104,12 @@ struct SearchScreenView: View {
             .preference(key: SearchEditingPreference.self, value: searchFocused)
             .onDisappear { searchFocused = false }
             .onChange(of: token, initial: true) { _, _ in
-                if state.lastToken != token { state.lastToken = token; state.query = initialQuery; state.kind = "songs"; submit() }
+                if state.lastToken != token { state.lastToken = token; state.query = initialQuery; state.kind = initialKind; submit() }
             }
             .task(id: state.generation) {
                 guard state.requestedGeneration != state.generation else { return }
                 state.requestedGeneration = state.generation
-                guard CatalogItem.link(state.submitted) == nil else { return }
+                guard !searchesFollows, CatalogItem.link(state.submitted) == nil else { return }
                 if state.kind == "songs" { await state.search.search(state.submitted) }
                 else { await state.catalog.search(state.submitted, kind: state.kind) }
             }
@@ -94,7 +119,7 @@ struct SearchScreenView: View {
             Text(title).font(.system(size: 13, weight: .semibold)).padding(.horizontal, 18).frame(minHeight: 44)
                 .background(state.kind == value ? Palette.text : Palette.raised, in: Capsule()).contentShape(Capsule())
                 .foregroundStyle(state.kind == value ? Color.black : Palette.text)
-        }.buttonStyle(.plain).accessibilityAddTraits(state.kind == value ? .isSelected : [])
+        }.buttonStyle(.plain).id(value).accessibilityAddTraits(state.kind == value ? .isSelected : [])
     }
     private func submit() {
         searchFocused = false

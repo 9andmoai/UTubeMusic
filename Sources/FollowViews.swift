@@ -16,75 +16,39 @@ struct FollowSource: Identifiable, Codable, Equatable {
     }
 }
 
-struct FollowsView: View {
-    @EnvironmentObject private var library: LibraryStore
-    @State private var query = ""
-    @State private var kind: String
-    @State private var search: Search?
+struct FollowSearchResults: View {
+    let query: String
+    let kind: String
     @State private var results: [FollowSource] = []
-    @State private var searching = false
+    @State private var loading = true
     @State private var error: String?
-    @FocusState private var focused: Bool
-
-    init(initialKind: String = "podcast") {
-        _kind = State(initialValue: initialKind)
-    }
-
-    private struct Search: Equatable {
-        let revision = UUID()
-        let query: String
-        let kind: String
-    }
+    @State private var retry = UUID()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("フォロー").font(.largeTitle.bold())
-                Picker("検索の種類", selection: $kind) {
-                    Text("ポッドキャスト").tag("podcast")
-                    Text("アーティスト").tag("artist")
-                }.pickerStyle(.segmented)
-                HStack {
-                    TextField("番組名・配信元名・アーティスト名", text: $query)
-                        .focused($focused).submitLabel(.search).onSubmit(submit)
-                    TextActionButton("検索", action: submit)
-                }.padding(.leading, 12).background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
-                if searching { ProgressView() }
-                if let error { Text(error).font(.caption).foregroundStyle(Palette.secondary) }
-                if search != nil {
-                    Text("検索結果").font(.headline)
-                    if results.isEmpty && !searching && error == nil { Text("一致する番組やアーティストがありません").foregroundStyle(Palette.secondary) }
-                    ForEach(results) { FollowLink(source: $0) }
-                }
-                Text("フォロー中").font(.headline).padding(.top, 8)
-                if library.follows.isEmpty {
-                    Text("番組やアーティストを開いてフォローできます。配信元は番組ページから開けます。")
-                        .font(.subheadline).foregroundStyle(Palette.secondary)
-                }
-                ForEach(library.follows) { FollowLink(source: $0) }
-            }.padding(20)
-        }.foregroundStyle(Palette.text)
-            .background(Palette.background)
-            .preference(key: SearchEditingPreference.self, value: focused)
-            .onChange(of: kind) { _, _ in if search != nil { submit() } }
-            .task(id: search) {
-                results = []; error = nil
-                guard let search, !search.query.isEmpty else { searching = false; return }
-                searching = true
-                defer { if !Task.isCancelled { searching = false } }
+        LazyVStack(alignment: .leading, spacing: 10) {
+            if loading {
+                ProgressView("検索中…").tint(Palette.accent)
+            } else if let error {
+                EmptyPanel(symbol: "wifi.exclamationmark", title: "検索できませんでした", detail: error)
+                TextActionButton("再試行") { retry = UUID() }
+            } else if results.isEmpty {
+                EmptyPanel(symbol: "magnifyingglass", title: "一致する項目がありません",
+                           detail: "別の名前で検索してください。")
+            } else {
+                ForEach(results) { FollowLink(source: $0, size: 62) }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+            .task(id: retry) {
+                loading = true; error = nil
+                defer { if !Task.isCancelled { loading = false } }
                 do {
-                    let response = try await PythonService.shared.request(["op": "follow_search", "kind": search.kind, "query": search.query])
+                    let response = try await PythonService.shared.request(["op": "follow_search", "kind": kind, "query": query])
                     try Task.checkCancellation()
                     results = response.follows ?? []
                 } catch {
                     if !Task.isCancelled { self.error = error.localizedDescription }
                 }
             }
-    }
-
-    private func submit() {
-        focused = false
-        search = Search(query: query.trimmingCharacters(in: .whitespacesAndNewlines), kind: kind)
     }
 }
 
