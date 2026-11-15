@@ -113,6 +113,7 @@ struct SaveJob: Identifiable {
     var error: String?
     var finished = false
     var playlistIDs: Set<UUID> = []
+    var requiresRegistration = false
 }
 
 @MainActor
@@ -146,6 +147,25 @@ final class MusicService: ObservableObject {
         jobs.append(SaveJob(id: id, song: song, playlistIDs: playlistIDs))
         scheduleNext()
     }
+    func pendingDownloads(in songs: [Song]) -> [Song] {
+        let activeIDs = Set(jobs.filter { !$0.finished && $0.error == nil }.map { $0.song.id })
+        var seen = Set<String>()
+        return songs.compactMap { value in
+            guard seen.insert(value.id).inserted, !activeIDs.contains(value.id),
+                  let song = library.song(value.id), song.hasYouTubeSource,
+                  !library.isAvailable(song) else { return nil }
+            return song
+        }
+    }
+
+    func downloadSavedSongs(_ songs: [Song]) {
+        guard !library.recoveryNeeded else { library.message = "ライブラリの復元が必要です。"; return }
+        jobs.append(contentsOf: pendingDownloads(in: songs).map {
+            SaveJob(id: UUID(), song: $0, requiresRegistration: true)
+        })
+        scheduleNext()
+    }
+
     func cancel(_ id: UUID) {
         if let task = tasks[id] { task.cancel() }
         else { update(id) { $0.error = "保存をキャンセルしました" } }
@@ -206,7 +226,11 @@ final class MusicService: ObservableObject {
     func retry(_ id: UUID) {
         guard let job = jobs.first(where: { $0.id == id }), job.error != nil else { return }
         jobs.removeAll { $0.id == id }
-        save(job.song, favorite: job.song.favorite, playlistIDs: job.playlistIDs)
+        if job.requiresRegistration {
+            downloadSavedSongs([job.song])
+        } else {
+            save(job.song, favorite: job.song.favorite, playlistIDs: job.playlistIDs)
+        }
     }
     private func update(_ id: UUID, _ body: (inout SaveJob) -> Void) {
         if let i = jobs.firstIndex(where: { $0.id == id }) { body(&jobs[i]) }
@@ -227,6 +251,9 @@ final class MusicService: ObservableObject {
         }
         do {
             try Task.checkCancellation()
+            if job.requiresRegistration && library.song(job.song.id) == nil {
+                throw AppFailure("曲がライブラリから削除されています。")
+            }
             update(id) { $0.phase = "音声を確認中" }
             let response = try await engine.request(["op": "resolve", "id": job.song.id])
             try Task.checkCancellation()
@@ -244,16 +271,25 @@ final class MusicService: ObservableObject {
                abs(duration - metadata.duration) > max(2, metadata.duration * 0.02) {
                 throw AppFailure("取得元の曲と音声の長さが一致しません。再試行してください。")
             }
-            if let thumbnail = metadata.thumbnail, let url = URL(string: thumbnail), url.scheme == "https" {
+            if !job.requiresRegistration || library.song(job.song.id)?.artworkName == nil,
+               let thumbnail = metadata.thumbnail, let url = URL(string: thumbnail), url.scheme == "https" {
                 // Artwork failure must not prevent listening. Cache it for offline use.
                 artworkName = await cacheArtwork(url)
             }
             try Task.checkCancellation()
-            var song = metadata.song
-            song.sourceLoudnessDB = response.loudness_db
+            let registered = library.song(job.song.id)
+            if job.requiresRegistration && registered == nil {
+                throw AppFailure("曲がライブラリから削除されています。")
+            }
             let latest = jobs.first(where: { $0.id == id }) ?? job
-            song.favorite = latest.song.favorite; song.duration = duration
-            song.fileName = fileName; song.artworkName = artworkName
+            var song = job.requiresRegistration ? (registered ?? metadata.song) : metadata.song
+            song.sourceLoudnessDB = response.loudness_db ?? song.sourceLoudnessDB
+            if !job.requiresRegistration || !latest.playlistIDs.isEmpty {
+                song.favorite = song.favorite || latest.song.favorite
+            }
+            song.duration = duration
+            song.fileName = fileName
+            song.artworkName = artworkName ?? song.artworkName
             song.audioTimingVersion = 1
             song.bytes = (try FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value ?? 0
             try library.save(song, playlistIDs: latest.playlistIDs)

@@ -38,7 +38,7 @@ struct LibraryView: View {
     }
     private var eligibleIDs: Set<String> { Set(visibleSongs.filter(library.canRemoveDownload).map(\.id)) }
     private var visibleSongs: [Song] {
-        let songs = filter == 1 ? library.favorites : filter == 3 ? library.songs.filter(library.isAvailable) : library.songs
+        let songs = filter == 3 ? library.songs.filter(library.isAvailable) : library.songs
         return text.isEmpty ? songs : songs.filter { $0.title.localizedCaseInsensitiveContains(text) || $0.artist.localizedCaseInsensitiveContains(text) }
     }
     var body: some View {
@@ -57,7 +57,7 @@ struct LibraryView: View {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            chip("すべて", value: 0); chip("お気に入り", value: 1)
+                            chip("すべて", value: 0)
                             chip("プレイリスト", value: 2)
                             chip("ポッドキャスト", value: 4); chip("アーティスト", value: 5)
                             chip("ダウンロード済み", value: 3)
@@ -70,7 +70,7 @@ struct LibraryView: View {
                         TextField(filter == 4 ? "番組・配信元を検索" : filter == 5 ? "アーティストを検索" : filter == 0 ? "ライブラリを検索" : "保存した曲を検索", text: $text).font(.subheadline).autocorrectionDisabled()
                     }.padding(14).background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
                 }
-                if filter != 3 && !showsFollowsOnly { AddSongsLink(destination: filter == 1 ? .favorites : .library) }
+                if filter != 3 && !showsFollowsOnly { AddSongsLink(destination: .library) }
                 if filter == 3 {
                     Text("このiPhoneに音声がある曲だけを表示します。YouTubeから保存した曲は、メニューの「ダウンロードだけ削除」で、お気に入り・プレイリストに残したままオンライン再生に切り替えられます。")
                         .font(.caption).foregroundStyle(Palette.secondary).lineSpacing(3)
@@ -118,12 +118,12 @@ struct LibraryView: View {
                 }
                 if filter != 2 && !showsFollowsOnly {
                     HStack {
-                        Text(filter == 1 ? "お気に入りの曲" : filter == 3 ? "ダウンロード済みの曲" : "保存した曲").font(.headline)
+                        Text(filter == 3 ? "ダウンロード済みの曲" : "保存した曲").font(.headline)
                         Spacer()
                         Text("\(visibleSongs.count)曲").font(.caption).foregroundStyle(Palette.secondary)
                     }
                     if visibleSongs.isEmpty {
-                        EmptyPanel(symbol: "music.note.list", title: filter == 3 ? "ダウンロード済みの曲はありません" : filter == 1 ? "お気に入りを集めよう" : "あなたの音楽は、ここに。", detail: text.isEmpty ? (filter == 3 ? "曲のメニューからオフライン用にダウンロードできます。" : "検索から曲を保存すると、\nここからいつでも聴けます。") : "検索条件に合う曲がありません。")
+                        EmptyPanel(symbol: "music.note.list", title: filter == 3 ? "ダウンロード済みの曲はありません" : "あなたの音楽は、ここに。", detail: text.isEmpty ? (filter == 3 ? "曲のメニューからオフライン用にダウンロードできます。" : "検索から曲を保存すると、\nここからいつでも聴けます。") : "検索条件に合う曲がありません。")
                     } else {
                         LazyVStack(spacing: 3) {
                             ForEach(visibleSongs) { song in
@@ -252,6 +252,7 @@ struct CollectionView: View {
                     PrimaryButton(title: "再生", symbol: "play.fill") { if let first = songs.first { player.start(songs, at: first) } }
                     IconButton(symbol: "shuffle", label: "シャッフル再生", color: Palette.accent) { if let song = songs.randomElement() { player.start(songs, at: song, shuffle: true) } }
                 }.disabled(songs.isEmpty)
+                CollectionDownloadButton(songs: songs)
                 AddSongsLink(destination: favorites ? .favorites : .library)
                 if songs.isEmpty { EmptyPanel(symbol: "heart", title: "好きな曲にハートを。", detail: "「曲を追加」から新しい曲を探せます。") }
                 ForEach(songs) { song in SongRow(song: song) { player.start(songs, at: song) } more: { selected = song } }
@@ -286,6 +287,7 @@ struct PlaylistDetailView: View {
                         PrimaryButton(title: "再生", symbol: "play.fill") { if let song = songs.first { player.start(songs, at: song) } }
                         IconButton(symbol: "shuffle", label: "シャッフル再生", color: Palette.accent) { if let song = songs.randomElement() { player.start(songs, at: song, shuffle: true) } }
                     }.disabled(songs.isEmpty)
+                    CollectionDownloadButton(songs: songs)
                     AddSongsLink(destination: .playlist(playlistID))
                 }.listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 20, trailing: 20)).listRowBackground(Color.clear).listRowSeparator(.hidden)
                 if songs.isEmpty {
@@ -330,5 +332,51 @@ struct PlaylistDetailView: View {
                     do { try library.deletePlaylist(playlistID); dismiss() } catch { library.message = error.localizedDescription }
                 }
             }
+    }
+}
+
+private struct CollectionDownloadButton: View {
+    let songs: [Song]
+    @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var music: MusicService
+    @State private var confirm = false
+    @State private var showDownloads = false
+
+    var body: some View {
+        if !songs.isEmpty {
+            let remaining = music.pendingDownloads(in: songs)
+            let songIDs = Set(songs.map(\.id))
+            let hasJobs = music.jobs.contains { songIDs.contains($0.song.id) && !$0.finished }
+            VStack(alignment: .leading, spacing: 2) {
+                if !remaining.isEmpty {
+                    Button { confirm = true } label: {
+                        label("一括ダウンロード（\(remaining.count)曲）", symbol: "arrow.down.circle")
+                    }.buttonStyle(.plain).disabled(library.recoveryNeeded)
+                } else if songs.allSatisfy(library.isAvailable) {
+                    label("ダウンロード済み", symbol: "checkmark.circle.fill")
+                        .foregroundStyle(Palette.secondary)
+                }
+                if hasJobs {
+                    Button { showDownloads = true } label: {
+                        label("ダウンロード状況", symbol: "list.bullet")
+                    }.buttonStyle(.plain)
+                }
+            }
+            .confirmationDialog("\(remaining.count)曲をオフライン用にダウンロードしますか？",
+                                isPresented: $confirm, titleVisibility: .visible) {
+                Button("ダウンロードする") {
+                    music.downloadSavedSongs(songs)
+                    showDownloads = true
+                }
+            }
+            .sheet(isPresented: $showDownloads) { DownloadsView() }
+        }
+    }
+
+    private func label(_ title: String, symbol: String) -> some View {
+        Label(title, systemImage: symbol)
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
     }
 }

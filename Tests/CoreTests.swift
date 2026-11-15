@@ -188,3 +188,29 @@ final class FollowPersistenceTests: XCTestCase {
         XCTAssertEqual(after.playlists.first?.id, playlist)
     }
 }
+
+@MainActor
+final class CollectionDownloadTests: XCTestCase {
+    func testBulkDownloadSelectsOnlyMissingRegisteredAudioAndDeduplicatesJobs() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = LibraryStore(root: root)
+        let music = MusicService(library: library)
+        let playlist = try library.createPlaylist("Playlist")
+        let online = Song(id: "00000000001", title: "Online", artist: "Artist", duration: 30)
+        let saved = Song(id: "00000000002", title: "Offline", artist: "Artist", duration: 30, fileName: "saved.m4a")
+        try Data([1]).write(to: root.appendingPathComponent("saved.m4a"))
+        try library.addOnline(online, favorite: true, playlistIDs: [playlist])
+        try library.save(saved, playlistIDs: [playlist])
+        let songs = [saved, online, online]
+        XCTAssertEqual(music.pendingDownloads(in: songs).map(\.id), [online.id])
+        music.downloadSavedSongs(songs)
+        music.downloadSavedSongs(songs)
+        defer { music.cancelPending() }
+        XCTAssertEqual(music.jobs.map { $0.song.id }, [online.id])
+        XCTAssertTrue(music.jobs[0].requiresRegistration)
+        XCTAssertTrue(music.jobs[0].playlistIDs.isEmpty)
+        XCTAssertEqual(library.playlists.first?.songIDs, [online.id, saved.id])
+        XCTAssertEqual(library.favorites.map(\.id), [online.id])
+    }
+}
