@@ -1,3 +1,9 @@
+# 0.4.3 プレイリストの一括ダウンロード
+
+SideStoreで UTubeMusic-0.4.3-unsigned.ipa を上書きします。Apple Watchも使用する場合は、Watch対応の改修版SideStoreで UTubeMusic-0.4.3-Watch-unsigned.ipa を選びます。
+
+ライブラリからプレイリストを開き、「一括ダウンロード」を選ぶと未保存の音声を順番に取得します。
+
 # 0.4.2 アーティストの人気曲
 
 SideStoreで UTubeMusic-0.4.2-unsigned.ipa を上書きします。Apple Watchも使用する場合は、Watch対応の改修版SideStoreで UTubeMusic-0.4.2-Watch-unsigned.ipa を選びます。
