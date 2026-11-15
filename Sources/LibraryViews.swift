@@ -23,6 +23,15 @@ struct LibraryView: View {
         _selecting = State(initialValue: initialSelection)
         _chosen = State(initialValue: initialSelectedIDs)
     }
+    private var showsFollowsOnly: Bool { filter == 4 || filter == 5 }
+    private var visibleFollows: [FollowSource] {
+        library.follows.filter { source in
+            let matchesKind = !showsFollowsOnly || (source.kind == "artist") == (filter == 5)
+            let matchesText = text.isEmpty || source.title.localizedCaseInsensitiveContains(text) ||
+                source.subtitle.localizedCaseInsensitiveContains(text)
+            return matchesKind && matchesText
+        }
+    }
     private var eligibleIDs: Set<String> { Set(visibleSongs.filter(library.canRemoveDownload).map(\.id)) }
     private var visibleSongs: [Song] {
         let songs = filter == 1 ? library.favorites : filter == 3 ? library.songs.filter(library.isAvailable) : library.songs
@@ -37,7 +46,7 @@ struct LibraryView: View {
                     if filter == 3 {
                         TextActionButton(selecting ? "完了" : "選択") { selecting.toggle(); chosen = [] }
                             .disabled(removing || (!selecting && eligibleIDs.isEmpty))
-                    } else {
+                    } else if !showsFollowsOnly {
                         IconButton(symbol: "plus", label: "プレイリストを作成") { name = ""; newPlaylist = true }
                     }
                 }.padding(.top, 12)
@@ -45,17 +54,19 @@ struct LibraryView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             chip("すべて", value: 0); chip("お気に入り", value: 1)
-                            chip("プレイリスト", value: 2); chip("ダウンロード済み", value: 3)
+                            chip("プレイリスト", value: 2)
+                            chip("ポッドキャスト", value: 4); chip("アーティスト", value: 5)
+                            chip("ダウンロード済み", value: 3)
                         }
                     }.onChange(of: filter, initial: true) { _, value in proxy.scrollTo(value, anchor: .center) }
                 }
                 if filter != 2 {
                     HStack {
                         Image(systemName: "magnifyingglass").foregroundStyle(Palette.secondary)
-                        TextField("保存した曲を検索", text: $text).font(.subheadline).autocorrectionDisabled()
+                        TextField(filter == 4 ? "番組・配信元を検索" : filter == 5 ? "アーティストを検索" : filter == 0 ? "ライブラリを検索" : "保存した曲を検索", text: $text).font(.subheadline).autocorrectionDisabled()
                     }.padding(14).background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
                 }
-                if filter != 3 { AddSongsLink(destination: filter == 1 ? .favorites : .library) }
+                if filter != 3 && !showsFollowsOnly { AddSongsLink(destination: filter == 1 ? .favorites : .library) }
                 if filter == 3 {
                     Text("このiPhoneに音声がある曲だけを表示します。YouTubeから保存した曲は、メニューの「ダウンロードだけ削除」で、お気に入り・プレイリストに残したままオンライン再生に切り替えられます。")
                         .font(.caption).foregroundStyle(Palette.secondary).lineSpacing(3)
@@ -98,7 +109,10 @@ struct LibraryView: View {
                         EmptyPanel(symbol: "rectangle.stack.badge.plus", title: "好きな曲を、ひとまとめに。", detail: "右上の＋からプレイリストを作成できます。")
                     }
                 }
-                if filter != 2 {
+                if showsFollowsOnly || (filter == 0 && !visibleFollows.isEmpty) {
+                    followedSources
+                }
+                if filter != 2 && !showsFollowsOnly {
                     HStack {
                         Text(filter == 1 ? "お気に入りの曲" : filter == 3 ? "ダウンロード済みの曲" : "保存した曲").font(.headline)
                         Spacer()
@@ -193,6 +207,25 @@ struct LibraryView: View {
             showResult = true; removalTask = nil
         }
     }
+    @ViewBuilder private var followedSources: some View {
+        if visibleFollows.isEmpty {
+            EmptyPanel(symbol: filter == 5 ? "music.mic" : "dot.radiowaves.left.and.right",
+                       title: text.isEmpty ? (filter == 5 ? "フォロー中のアーティストはありません" : "フォロー中の番組や配信元はありません") : "一致する項目がありません",
+                       detail: text.isEmpty ? "フォローするとここに表示されます。" : "検索する名前を変えてください。")
+        }
+        ForEach(visibleFollows) { FollowLink(source: $0, size: 62) }
+        if showsFollowsOnly && text.isEmpty {
+            NavigationLink {
+                FollowsView(initialKind: filter == 5 ? "artist" : "podcast")
+                    .toolbar(.visible, for: .navigationBar)
+            } label: {
+                Label(filter == 5 ? "アーティストを探す" : "ポッドキャストを探す", systemImage: "magnifyingglass")
+                    .font(.subheadline.bold()).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain)
+        }
+    }
+
     private func chip(_ title: String, value: Int) -> some View {
         Button { filter = value } label: {
             Text(title).font(.system(size: 13, weight: .semibold)).padding(.horizontal, 17).frame(minHeight: 44)

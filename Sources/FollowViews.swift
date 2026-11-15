@@ -19,12 +19,16 @@ struct FollowSource: Identifiable, Codable, Equatable {
 struct FollowsView: View {
     @EnvironmentObject private var library: LibraryStore
     @State private var query = ""
-    @State private var kind = "podcast"
+    @State private var kind: String
     @State private var search: Search?
     @State private var results: [FollowSource] = []
     @State private var searching = false
     @State private var error: String?
     @FocusState private var focused: Bool
+
+    init(initialKind: String = "podcast") {
+        _kind = State(initialValue: initialKind)
+    }
 
     private struct Search: Equatable {
         let revision = UUID()
@@ -84,13 +88,15 @@ struct FollowsView: View {
     }
 }
 
-private struct FollowLink: View {
+struct FollowLink: View {
     let source: FollowSource
+    var size: CGFloat = 52
 
     var body: some View {
         NavigationLink { FollowDetailView(source: source) } label: {
             HStack(spacing: 12) {
-                PlaylistArtwork(name: source.title, size: 52, cover: source.thumbnail)
+                PlaylistArtwork(name: source.title, size: size, cover: source.thumbnail)
+                    .clipShape(RoundedRectangle(cornerRadius: source.kind == "artist" ? size / 2 : 8))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(source.title).font(.headline)
                     Text(source.subtitle.isEmpty ? source.label : source.subtitle).font(.caption).foregroundStyle(Palette.secondary)
