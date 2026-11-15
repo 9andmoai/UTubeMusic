@@ -3,13 +3,15 @@ import MediaPlayer
 import UIKit
 
 enum PlaybackSource: Equatable {
-    case library, search, collection(String)
+    case library, search, collection(String), podcast(String)
+
+    var isPodcast: Bool { if case .podcast = self { return true }; return false }
 
     var title: String {
         switch self {
         case .library: return "このiPhoneのライブラリ"
         case .search: return "検索結果"
-        case .collection(let title): return title
+        case .collection(let title), .podcast(let title): return title
         }
     }
 }
@@ -59,7 +61,7 @@ final class PlayerStore: ObservableObject {
     private var alternateIntroOffset: Double?
     private let recentIntroOffsets = NSCache<NSString, NSNumber>()
     var lyricsSongID: String? {
-        guard !resolvingOnline, let current, current.hasYouTubeSource else { return nil }
+        guard !playbackSource.isPodcast, !resolvingOnline, let current, current.hasYouTubeSource else { return nil }
         return alternateAudioID ?? current.id
     }
     var playbackVolume: Float { player.volume }
@@ -178,6 +180,7 @@ final class PlayerStore: ObservableObject {
     }
     private var currentStartOffset: Double {
         guard let current else { return 0 }
+        if playbackSource.isPodcast { return 0 }
         if alternateAudioID != nil {
             return autoSkipIntro ? min(alternateIntroOffset ?? 0, max(0, duration - 0.5)) : 0
         }
@@ -370,7 +373,7 @@ final class PlayerStore: ObservableObject {
             }
         }
         playing = false
-        if autoSkipIntro, song.introSkipSeconds == nil, song.detectedIntroSeconds == nil {
+        if !playbackSource.isPodcast, autoSkipIntro, song.introSkipSeconds == nil, song.detectedIntroSeconds == nil {
             preparingIntro = true; playAfterIntro = autoplay
             introTask = Task { [weak self, weak item] in
                 let result = try? await IntroSilence.read(url)
@@ -408,15 +411,16 @@ final class PlayerStore: ObservableObject {
         artwork = nil; resolvingOnline = true; updateNowPlaying()
         streamTask = Task { [weak self] in
             do {
-                let response = try await self?.request(["op": "resolve", "id": song.id, "allow_official_audio": "1"])
-                guard let response else { return }
+                guard let self else { return }
+                let allowOfficialAudio = self.playbackSource.isPodcast ? "0" : "1"
+                let response = try await self.request(["op": "resolve", "id": song.id, "allow_official_audio": allowOfficialAudio])
                 try Task.checkCancellation()
-                guard let self, self.streamGeneration == token else { return }
+                guard self.streamGeneration == token else { return }
                 guard let text = response.url, let url = URL(string: text), url.scheme == "https",
                       url.host?.hasSuffix(".googlevideo.com") == true else { throw AppFailure("音声の取得先を確認できません。") }
                 let alternate = response.audio_source_id
                 let usesAlternate = alternate != nil
-                if self.autoSkipIntro, usesAlternate || (song.introSkipSeconds == nil && song.detectedIntroSeconds == nil) {
+                if !self.playbackSource.isPodcast, self.autoSkipIntro, usesAlternate || (song.introSkipSeconds == nil && song.detectedIntroSeconds == nil) {
                     self.preparingIntro = true
                     let source = (alternate ?? song.id) as NSString
                     let result: Double?

@@ -33,6 +33,10 @@ struct EngineResponse: Decodable {
     let audio_duration: Double?
     let audio_source_id: String?
     let lyrics: TrackLyrics?
+    let follows: [FollowSource]?
+    let follow: FollowSource?
+    let publisher: FollowSource?
+    let cover: String?
 }
 
 final class PythonService {
@@ -66,8 +70,8 @@ final class PythonService {
         let key = data as NSData
         let lifetime: TimeInterval
         switch values["op"] {
-        case "suggestions", "search", "catalog_search": lifetime = 180
-        case "home", "collection": lifetime = 900
+        case "suggestions", "search", "catalog_search", "follow_search": lifetime = 180
+        case "home", "collection", "cover": lifetime = 900
         case "lyrics": lifetime = 3600
         default: lifetime = 0
         }
@@ -182,11 +186,11 @@ final class MusicService: ObservableObject {
         library.message = candidates.isEmpty ? "修復が必要な曲はありません。" : "\(repaired)曲の再生時間を修復しました。" +
             (failures.isEmpty ? "" : "\n修復できなかった曲は元のまま保持しています。\n" + failures.joined(separator: "\n"))
     }
-    func saveCollection(_ songs: [Song], title: String, sourceID: String, favorite: Bool, download: Bool = true) throws {
+    func saveCollection(_ songs: [Song], title: String, sourceID: String, favorite: Bool, download: Bool = true, cover: String? = nil) throws {
         guard !songs.isEmpty else { throw AppFailure("保存できる曲がありません。") }
         // Reuse only the same imported source; a user's equally named list is separate.
         let playlistID = try library.playlists.first(where: { $0.sourceID == sourceID })?.id ?? library.createPlaylist(title)
-        try library.setSourceOrder(songs.map(\.id), sourceID: sourceID, for: playlistID)
+        try library.setSourceOrder(songs.map(\.id), sourceID: sourceID, for: playlistID, cover: cover)
         for song in songs {
             if !download { try library.addOnline(song, favorite: favorite, playlistIDs: [playlistID]); continue }
             if let index = jobs.firstIndex(where: { $0.song.id == song.id && !$0.finished && $0.error == nil }) {

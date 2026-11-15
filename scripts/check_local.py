@@ -13,7 +13,7 @@ import yaml
 def main():
     parser = Parser(Language(tree_sitter_swift.language()))
     failures = []
-    for path in sorted((ROOT / "Sources").glob("*.swift")) + sorted((ROOT / "Tests").glob("*.swift")):
+    for path in sorted((ROOT / "Sources").glob("*.swift")) + sorted((ROOT / "Tests").glob("*.swift")) + sorted((ROOT / "Watch").glob("*.swift")):
         source = path.read_bytes()
         tree = parser.parse(source)
         stack = [tree.root_node]

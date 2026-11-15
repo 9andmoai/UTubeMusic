@@ -70,7 +70,7 @@ struct NowPlayingView: View {
                             Spacer()
                             IconButton(symbol: "list.bullet", label: "再生キュー") { showQueue = true }
                         }.padding(.top, 4)
-                        if song.hasYouTubeSource {
+                        if song.hasYouTubeSource && !player.playbackSource.isPodcast {
                             LyricsCard(state: player.lyricsSongID.map { lyrics.state(for: $0) } ?? .loading, elapsed: player.elapsed) { showLyrics = true }
                                 .id(song.id)
                         }

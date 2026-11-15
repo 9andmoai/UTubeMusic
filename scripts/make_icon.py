@@ -6,7 +6,7 @@ import struct
 import zlib
 
 
-def create_icon(folder):
+def create_icon(folder, platform="ios"):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     size = 1024
@@ -33,7 +33,7 @@ def create_icon(folder):
         return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xffffffff)
     png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b"")
     (folder / "AppIcon.png").write_bytes(png)
-    (folder / "Contents.json").write_text(json.dumps({"images": [{"filename": "AppIcon.png", "idiom": "universal", "platform": "ios", "size": "1024x1024"}], "info": {"author": "UTubeMusic", "version": 1}}, indent=2))
+    (folder / "Contents.json").write_text(json.dumps({"images": [{"filename": "AppIcon.png", "idiom": "universal", "platform": platform, "size": "1024x1024"}], "info": {"author": "UTubeMusic", "version": 1}}, indent=2))
 
 
 if __name__ == "__main__":

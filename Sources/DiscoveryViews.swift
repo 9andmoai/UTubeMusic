@@ -218,7 +218,7 @@ struct RemoteCollectionView: View {
             .sheet(isPresented: $confirm, onDismiss: {
                 if batchQueued { batchQueued = false; showDownloads = true }
             }) {
-                BatchSaveSheet(title: displayed.title, sourceID: displayed.id, songs: store.songs) {
+                BatchSaveSheet(title: displayed.title, sourceID: displayed.id, songs: store.songs, cover: displayed.thumbnail) {
                     batchQueued = music.jobs.contains { !$0.finished && $0.error == nil }
                 }
             }

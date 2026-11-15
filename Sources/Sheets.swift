@@ -45,7 +45,7 @@ struct SaveSongSheet: View {
                                     else { playlistIDs.insert(playlist.id) }
                                 } label: {
                                     HStack(spacing: 12) {
-                                        PlaylistArtwork(name: playlist.name, size: 42)
+                                        PlaylistArtwork(name: playlist.name, size: 42, cover: playlist.cover)
                                         Text(playlist.name).font(.subheadline).multilineTextAlignment(.leading)
                                         Spacer(minLength: 4)
                                         Image(systemName: playlistIDs.contains(playlist.id) ? "checkmark.circle.fill" : "circle")
@@ -99,6 +99,7 @@ struct BatchSaveSheet: View {
     let title: String
     let sourceID: String
     let songs: [Song]
+    var cover: String? = nil
     let onSaved: () -> Void
     @EnvironmentObject private var music: MusicService
     @EnvironmentObject private var library: LibraryStore
@@ -109,7 +110,7 @@ struct BatchSaveSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    PlaylistArtwork(name: title, size: 90)
+                    PlaylistArtwork(name: title, size: 90, cover: cover)
                     Text(title).font(.title2.bold())
                     Text("\(songs.count)曲を「\(title)」プレイリストに保存します。") .font(.subheadline)
                     Toggle("全曲をオフライン用にもダウンロード", isOn: $download).tint(Palette.accent)
@@ -126,7 +127,7 @@ struct BatchSaveSheet: View {
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("閉じる") { dismiss() } } }
                 .safeAreaInset(edge: .bottom) {
                     PrimaryButton(title: download ? "\(songs.count)曲をダウンロード" : "\(songs.count)曲を追加", symbol: "plus") {
-                        do { try music.saveCollection(songs, title: title, sourceID: sourceID, favorite: favorite, download: download); dismiss(); onSaved() }
+                        do { try music.saveCollection(songs, title: title, sourceID: sourceID, favorite: favorite, download: download, cover: cover); dismiss(); onSaved() }
                         catch { library.message = error.localizedDescription }
                     }.disabled(library.recoveryNeeded).padding(20).background(Palette.background)
                 }
@@ -312,7 +313,7 @@ struct SettingsView: View {
                         .font(.subheadline).foregroundStyle(Palette.secondary)
                 }
                 Section {
-                    LabeledContent("バージョン", value: "0.3.11 開発版")
+                    LabeledContent("バージョン", value: "0.4.0 開発版")
                     Text("個人用の音楽ライブラリ。曲の取得はYouTubeの仕様や制限により失敗する場合があります。")
                         .font(.caption).foregroundStyle(Palette.secondary)
                     Text("Python / yt-dlp / yt-dlp-ejs / certifi / yt-dlp-apple-webkit-jsi / ytmusicapi / requests を使用。ライセンスはアプリ内の同梱ファイル ThirdPartyNotices を参照。")

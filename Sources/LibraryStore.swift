@@ -11,6 +11,7 @@ struct DownloadRemovalReport {
 final class LibraryStore: ObservableObject {
     @Published private(set) var songs: [Song] = []
     @Published private(set) var playlists: [MusicPlaylist] = []
+    @Published private(set) var follows: [FollowSource] = []
     @Published var message: String?
     @Published private(set) var recoveryNeeded = false
     let root: URL
@@ -32,7 +33,7 @@ final class LibraryStore: ObservableObject {
                       Set(snapshot.playlists.map(\.id)).count == snapshot.playlists.count else {
                     throw AppFailure("ライブラリ内に重複したIDがあります。バックアップを確認してください。")
                 }
-                songs = snapshot.songs; playlists = snapshot.playlists
+                songs = snapshot.songs; playlists = snapshot.playlists; follows = snapshot.follows ?? []
             }
         } catch {
             recoveryNeeded = true
@@ -158,10 +159,11 @@ final class LibraryStore: ObservableObject {
             }
         }
     }
-    func setSourceOrder(_ ids: [String], sourceID: String, for playlistID: UUID) throws {
+    func setSourceOrder(_ ids: [String], sourceID: String, for playlistID: UUID, cover: String? = nil) throws {
         try commit {
             if let i = playlists.firstIndex(where: { $0.id == playlistID }) {
                 playlists[i].sourceOrder = ids; playlists[i].sourceID = sourceID
+                if let cover { playlists[i].cover = cover }
             }
         }
     }
@@ -258,17 +260,32 @@ final class LibraryStore: ObservableObject {
             try save(Song(id: id, title: url.deletingPathExtension().lastPathComponent, artist: "読み込んだ曲", duration: duration, fileName: name, bytes: bytes), playlistID: nil)
         } catch { try? fm.removeItem(at: target); throw error }
     }
+    func toggleFollow(_ source: FollowSource) throws {
+        try commit {
+            if let index = follows.firstIndex(where: { $0.id == source.id }) {
+                follows.remove(at: index)
+            } else {
+                follows.insert(source, at: 0)
+            }
+        }
+    }
+
+    func updateCover(_ cover: String, for playlistID: UUID, sourceID: String) {
+        guard let index = playlists.firstIndex(where: { $0.id == playlistID && $0.sourceID == sourceID && $0.cover == nil }) else { return }
+        try? commit { playlists[index].cover = cover }
+    }
+
     private func commit(_ mutation: () -> Void) throws {
         guard !recoveryNeeded else { throw AppFailure("元のライブラリを保護しています。復元してから操作してください。") }
-        let oldSongs = songs, oldPlaylists = playlists
+        let oldSongs = songs, oldPlaylists = playlists, oldFollows = follows
         mutation()
         do {
-            let data = try JSONEncoder().encode(LibrarySnapshot(songs: songs, playlists: playlists))
+            let data = try JSONEncoder().encode(LibrarySnapshot(songs: songs, playlists: playlists, follows: follows))
             if fm.fileExists(atPath: database.path) {
                 // The previous valid index remains available alongside the audio in Files.
                 try Data(contentsOf: database).write(to: root.appendingPathComponent("library.previous.json"), options: .atomic)
             }
             try data.write(to: database, options: .atomic)
-        } catch { songs = oldSongs; playlists = oldPlaylists; throw error }
+        } catch { songs = oldSongs; playlists = oldPlaylists; follows = oldFollows; throw error }
     }
 }

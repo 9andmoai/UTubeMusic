@@ -43,12 +43,14 @@ struct MusicPlaylist: Identifiable, Codable, Equatable {
     var createdAt = Date()
     var sourceOrder: [String]? = nil
     var sourceID: String? = nil
+    var cover: String? = nil
 }
 
 struct LibrarySnapshot: Codable {
     var version = 1
     var songs: [Song] = []
     var playlists: [MusicPlaylist] = []
+    var follows: [FollowSource]? = nil
 }
 
 enum RepeatMode: String, Codable, CaseIterable {

@@ -17,6 +17,7 @@ struct UTubeMusicApp: App {
             RootView()
                 .environmentObject(library).environmentObject(player).environmentObject(music)
                 .preferredColorScheme(.dark).tint(Palette.accent)
+                .task { WatchEpisodeTransfer.shared.activate() }
         }
     }
 }

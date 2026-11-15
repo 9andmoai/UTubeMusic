@@ -76,14 +76,44 @@ struct PlaylistArtwork: View {
     var name: String
     var favorite = false
     var size: CGFloat = 140
+    var cover: String? = nil
+
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            LinearGradient(colors: favorite ? [Color(red: 0.38, green: 0.24, blue: 0.7), Color(red: 0.11, green: 0.3, blue: 0.36)] : [Palette.accent.opacity(0.75), Color(red: 0.26, green: 0.16, blue: 0.32), Palette.surface], startPoint: .topLeading, endPoint: .bottomTrailing)
+        Group {
+            if let cover, let url = URL(string: cover), url.scheme == "https" {
+                ArtworkImage(url: url) { fallback }
+            } else { fallback }
+        }.frame(width: size, height: size).clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityHidden(true)
+    }
+
+    private var fallback: some View {
+        let hues: [Double] = [0.03, 0.10, 0.34, 0.47, 0.56, 0.69, 0.80, 0.92]
+        let index = name.utf8.reduce(0) { ($0 * 31 + Int($1)) % hues.count }
+        let tint = Color(hue: hues[index], saturation: 0.63, brightness: 0.53)
+        return ZStack(alignment: .bottomLeading) {
+            LinearGradient(colors: favorite ? [Color(red: 0.38, green: 0.24, blue: 0.7), Color(red: 0.11, green: 0.3, blue: 0.36)] : [tint, Palette.surface], startPoint: .topLeading, endPoint: .bottomTrailing)
             Circle().stroke(.white.opacity(0.1), lineWidth: size * 0.14).frame(width: size * 0.8).offset(x: size * 0.4, y: -size * 0.35)
             Image(systemName: favorite ? "heart.fill" : "waveform").font(.system(size: size * 0.3, weight: .light))
                 .foregroundStyle(.white.opacity(0.9)).padding(size * 0.14)
         }.frame(width: size, height: size).clipped().clipShape(RoundedRectangle(cornerRadius: 12))
-            .accessibilityLabel(name)
+    }
+}
+
+struct LibraryPlaylistArtwork: View {
+    let playlist: MusicPlaylist
+    let size: CGFloat
+    @EnvironmentObject private var library: LibraryStore
+
+    var body: some View {
+        PlaylistArtwork(name: playlist.name, size: size,
+                        cover: playlist.cover ?? library.songs(in: playlist).compactMap(\.thumbnail).first)
+            .task(id: playlist.sourceID) {
+                guard playlist.cover == nil, let source = playlist.sourceID,
+                      let response = try? await PythonService.shared.request(["op": "cover", "id": source]),
+                      !Task.isCancelled, let cover = response.cover else { return }
+                library.updateCover(cover, for: playlist.id, sourceID: source)
+            }
     }
 }
 struct SectionTitle: View {

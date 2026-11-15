@@ -203,6 +203,68 @@ def song_lyrics(api, ident):
     return {"lines": sorted(lines, key=lambda line: line["start"]), "source": source}
 
 
+def follow_item(value, kind):
+    ident = value.get("browseId") or value.get("id") or ""
+    pattern = {"podcast": r"MPSP[A-Za-z0-9_-]{5,196}", "publisher": r"UC[A-Za-z0-9_-]{22}",
+               "artist": r"UC[A-Za-z0-9_-]{22}"}[kind]
+    title = value.get("title") or value.get("name") or value.get("artist")
+    if not re.fullmatch(pattern, ident) or not isinstance(title, str) or not title:
+        return None
+    return {"id": ident, "kind": kind, "title": title, "subtitle": names(value.get("author")),
+            "thumbnail": thumbnail(value)}
+
+
+def episodes(rows, publisher, art):
+    seen = set()
+    result = []
+    for row in rows:
+        ident = row.get("videoId") or ""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", ident) or ident in seen or row.get("isAvailable") is False:
+            continue
+        seen.add(ident)
+        length = row.get("duration") or ""
+        seconds = 0
+        for unit, factor in (("hr", 3600), ("min", 60), ("sec", 1)):
+            if match := re.search(r"(\d+) " + unit, length):
+                seconds += int(match[1]) * factor
+        if re.fullmatch(r"\d+(?::\d{2}){1,2}", length):
+            seconds = sum(int(part) * 60 ** i for i, part in enumerate(reversed(length.split(":"))))
+        result.append({"id": ident, "title": row.get("title") or "タイトル不明", "artist": publisher,
+                       "duration": seconds, "thumbnail": thumbnail(row) or art})
+    return result
+
+
+def follow_feed(api, kind, ident):
+    if not follow_item({"id": ident, "name": "source"}, kind):
+        raise ValueError("フォロー先のリンクを確認してください。")
+    if kind == "artist":
+        data = api.get_artist(ident)
+        source = follow_item({**data, "id": ident}, kind)
+        releases = {}
+        for key in ("singles", "albums"):
+            for raw in (data.get(key) or {}).get("results", [])[:12]:
+                if entry := item(raw):
+                    releases[entry["id"]] = entry
+        return {"ok": True, "follow": source, "items": list(releases.values())}
+    if kind == "publisher":
+        data = api.get_channel(ident)
+        source = follow_item({**data, "id": ident}, kind)
+        shows = [entry for raw in (data.get("podcasts") or {}).get("results", []) if (entry := follow_item(raw, "podcast"))]
+        rows = (data.get("episodes") or {}).get("results", [])
+        publisher = data["title"]
+        parent = None
+    else:
+        data = api.get_podcast(ident, limit=50)
+        source = follow_item({**data, "id": ident}, kind)
+        author = data.get("author") or {}
+        publisher = names(author.get("name"))
+        parent = follow_item(author, "publisher")
+        rows = data.get("episodes", [])
+        shows = []
+    return {"ok": True, "follow": source, "publisher": parent, "follows": shows,
+            "songs": episodes(rows[:50], publisher, thumbnail(data))}
+
+
 def dispatch(request):
     from ytmusicapi import YTMusic
     import certifi
@@ -216,6 +278,23 @@ def dispatch(request):
         # The pinned parser currently misses filtered search shelves in Japanese.
         # Keep home headings Japanese; English metadata parsing preserves song titles.
         api = YTMusic(requests_session=session, language="ja" if op == "home" else "en", location="JP")
+        if op == "follow_search":
+            kind = request.get("kind")
+            if kind not in ("podcast", "artist"):
+                raise ValueError("検索の種類を選んでください。")
+            query = str(request.get("query", "")).strip()[:160]
+            rows = api.search(query, filter=kind + "s", limit=15) if query else []
+            found = {entry["id"]: entry for raw in rows[:15] if (entry := follow_item(raw, kind))}
+            return {"ok": True, "follows": list(found.values())}
+        if op == "follow_feed":
+            kind = request.get("kind")
+            if kind not in ("podcast", "publisher", "artist"):
+                raise ValueError("フォロー先を確認してください。")
+            return follow_feed(api, kind, request.get("id", ""))
+        if op == "cover":
+            ident = collection_ref(request.get("id", ""))
+            data = api.get_album(ident) if ident.startswith("MPRE") else api.get_playlist(ident, limit=1)
+            return {"ok": True, "cover": thumbnail(data)}
         if op == "lyrics":
             return {"ok": True, "lyrics": song_lyrics(api, request.get("id"))}
         if op == "suggestions":

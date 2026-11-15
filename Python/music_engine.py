@@ -139,7 +139,7 @@ def resolve_playback(ydl, ident, allow_official_audio):
 def dispatch(request_json):
     try:
         request = json.loads(request_json)
-        if request.get("op") in ("home", "catalog_search", "collection", "suggestions", "lyrics"):
+        if request.get("op") in ("home", "catalog_search", "collection", "suggestions", "lyrics", "follow_search", "follow_feed", "cover"):
             import music_catalog
             return json.dumps(music_catalog.dispatch(request), ensure_ascii=False)
         import certifi

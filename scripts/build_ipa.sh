@@ -8,6 +8,6 @@ fi
 python3 scripts/prepare.py
 xcodegen generate
 xcodebuild -project UTubeMusic.xcodeproj -scheme UTubeMusic -configuration Release \
-  -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device \
+  -destination 'generic/platform=iOS' -derivedDataPath build/device \
   CODE_SIGNING_ALLOWED=NO build >build/device-build.log 2>&1 || { tail -120 build/device-build.log; exit 1; }
 python3 scripts/package_ipa.py

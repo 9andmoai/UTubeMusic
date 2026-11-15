@@ -29,6 +29,7 @@ struct RootView: View {
                     switch tab {
                     case 1: searchScreen
                     case 2: LibraryView()
+                    case 3: FollowsView()
                     default: homeScreen
                     }
                 }
@@ -86,6 +87,7 @@ struct RootView: View {
             HStack(spacing: 0) {
                 tabButton(0, title: "ホーム", icon: "house", selected: "house.fill")
                 tabButton(1, title: "検索", icon: "magnifyingglass", selected: "magnifyingglass")
+                tabButton(3, title: "フォロー", icon: "dot.radiowaves.left.and.right", selected: "dot.radiowaves.left.and.right")
                 tabButton(2, title: "ライブラリ", icon: "square.stack", selected: "square.stack.fill")
             }.padding(.top, 6).padding(.bottom, 2)
         }.foregroundStyle(Palette.text).background(Palette.background).accessibilityIdentifier("bottom-player-bar")

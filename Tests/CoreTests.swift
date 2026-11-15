@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import UTubeMusic
 
 final class EmbeddedRuntimeTests: XCTestCase {
@@ -164,5 +165,26 @@ final class LibraryTests: XCTestCase {
         try FileManager.default.removeItem(at: file)
         XCTAssertThrowsError(try SongAddDestination.favorites.add(song, to: store))
         XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("library.json")), before)
+    }
+}
+
+@MainActor
+final class FollowPersistenceTests: XCTestCase {
+    func testFollowAndRemoteCoverSurviveReloadAndUnfollowKeepsPlaylist() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = LibraryStore(root: root)
+        let playlist = try library.createPlaylist("Album")
+        let cover = "https://example.com/cover.jpg"
+        try library.setSourceOrder([], sourceID: "MPREb_album", for: playlist, cover: cover)
+        let source = FollowSource(id: "MPSPPL12345", kind: "podcast", title: "News", subtitle: "", thumbnail: nil)
+        try library.toggleFollow(source)
+        let reloaded = LibraryStore(root: root)
+        XCTAssertEqual(reloaded.follows, [source])
+        XCTAssertEqual(reloaded.playlists.first?.cover, cover)
+        try reloaded.toggleFollow(source)
+        let after = LibraryStore(root: root)
+        XCTAssertTrue(after.follows.isEmpty)
+        XCTAssertEqual(after.playlists.first?.id, playlist)
     }
 }

@@ -85,7 +85,7 @@ struct LibraryView: View {
                     ForEach(library.playlists) { playlist in
                         NavigationLink { PlaylistDetailView(playlistID: playlist.id) } label: {
                             HStack(spacing: 14) {
-                                PlaylistArtwork(name: playlist.name, size: 62)
+                                LibraryPlaylistArtwork(playlist: playlist, size: 62)
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(playlist.name).font(.headline).foregroundStyle(Palette.text)
                                     Text("プレイリスト · \(playlist.songIDs.count)曲").font(.caption).foregroundStyle(Palette.secondary)
@@ -244,7 +244,7 @@ struct PlaylistDetailView: View {
         List {
             if let playlist {
                 VStack(alignment: .leading, spacing: 20) {
-                    PlaylistArtwork(name: playlist.name, size: 210).frame(maxWidth: .infinity).padding(.vertical, 12)
+                    LibraryPlaylistArtwork(playlist: playlist, size: 210).frame(maxWidth: .infinity).padding(.vertical, 12)
                     Text(playlist.name).font(.largeTitle.bold())
                     Text("\(songs.count)曲 · " + Song.clock(songs.reduce(0) { $0 + $1.duration }))
                         .font(.caption).foregroundStyle(Palette.secondary)

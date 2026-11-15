@@ -18,10 +18,27 @@ def main():
     assert (app / "python/lib/python3.13/encodings").is_dir()
     assert not (app / "python/lib/python3.13/test").exists(), "Development-only CPython tests must not ship"
     assert not list(app.rglob("*.so")), "Unpackaged native Python modules"
-    output = ROOT / "build/UTubeMusic-0.3.11-unsigned.ipa"
+    watch = app / "Watch/UTubeMusicWatch.app"
+    with (watch / "Info.plist").open("rb") as f:
+        watch_info = plistlib.load(f)
+    assert watch_info["WKCompanionAppBundleIdentifier"] == info["CFBundleIdentifier"]
+    assert watch_info["CFBundleIdentifier"] == info["CFBundleIdentifier"] + ".watchkitapp"
+    assert watch_info["CFBundleVersion"] == info["CFBundleVersion"]
+    assert watch_info["DTPlatformName"] == "watchos"
+    assert "audio" in watch_info["UIBackgroundModes"]
+    assert (watch / watch_info["CFBundleExecutable"]).is_file()
+    version = info["CFBundleShortVersionString"]
+    for variant, include_watch in (("", False), ("-Watch", True)):
+        write_ipa(app, ROOT / f"build/UTubeMusic-{version}{variant}-unsigned.ipa", include_watch)
+
+
+def write_ipa(app, output, include_watch):
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(app.rglob("*")):
-            relative = str(Path("Payload") / "UTubeMusic.app" / path.relative_to(app))
+            inside = path.relative_to(app)
+            if not include_watch and inside.parts[0] == "Watch":
+                continue
+            relative = (Path("Payload") / "UTubeMusic.app" / inside).as_posix()
             if path.is_symlink():
                 item = zipfile.ZipInfo(relative)
                 item.create_system = 3

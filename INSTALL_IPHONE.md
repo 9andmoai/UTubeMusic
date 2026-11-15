@@ -1,3 +1,11 @@
+# 0.4.0 フォローとApple Watch
+
+- iPhoneで使う場合は `UTubeMusic-0.4.0-unsigned.ipa` をSideStoreで上書きします。
+- Watchへも入れる場合はFairwayで実機確認済みのWatch対応改修版SideStoreで `UTubeMusic-0.4.0-Watch-unsigned.ipa` を選びます。Watchの登録・ペアリングはFairwayでの設定を使います。
+- iPhoneで番組を開き、エピソード行のWatchアイコンから「エピソードを送る」を選びます。受信後、Watchの「エピソード」から再生します。
+
+[FairwayのWatch導入手順](https://github.com/iwamoto0414yuuki-droid/Fairway/blob/cc13860/docs/watch-sideloading/REUSE_GUIDE.md)
+
 # 0.3.11：公開プレイリスト・アルバムの再生
 
 SideStoreで `UTubeMusic-0.3.11-unsigned.ipa` を、今のアプリを削除せずに上書きします。公開プレイリストやアルバムを開くと、曲単位の再生、先頭からの再生、シャッフルを選べます。

@@ -76,6 +76,7 @@ def main():
     (vendor / "ThirdPartyNotices.txt").write_text("\n".join(notices), encoding="utf-8")
     from make_icon import create_icon
     create_icon(ROOT / "Sources/Assets.xcassets/AppIcon.appiconset")
+    create_icon(ROOT / "Watch/Assets.xcassets/AppIcon.appiconset", platform="watchos")
     print("Pinned runtime and pure Python dependencies ready")
 
 

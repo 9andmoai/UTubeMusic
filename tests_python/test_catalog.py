@@ -82,6 +82,17 @@ class CatalogTests(unittest.TestCase):
         self.assertIsNone(catalog.official_audio_candidate(api, "different01"))
         api.search.assert_not_called()
 
+    def test_podcast_feed_resolves_publisher_and_preserves_episode_order(self):
+        api = Mock()
+        author = {"id": "UC" + "p" * 22, "name": "BBC News"}
+        first = {"videoId": "00000000001", "title": "New", "duration": "1 hr 2 min 3 sec"}
+        second = {"videoId": "00000000002", "title": "Old", "duration": "10:09"}
+        api.get_podcast.return_value = {"title": "News", "author": author, "episodes": [first, first, second]}
+        result = catalog.follow_feed(api, "podcast", "MPSPPL12345")
+        self.assertEqual(result["publisher"]["id"], author["id"])
+        self.assertEqual([s["id"] for s in result["songs"]], [first["videoId"], second["videoId"]])
+        self.assertEqual([s["duration"] for s in result["songs"]], [3723, 609])
+
     def test_public_home_filters_artists_and_deduplicates(self):
         with self.fake(): result = catalog.dispatch({"op": "home"})
         self.assertEqual(len(result["sections"][0]["items"]), 1)

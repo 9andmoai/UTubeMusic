@@ -57,15 +57,30 @@ def main():
             for marker in [name for name in names if name.endswith(".fwork")]:
                 assert prefix + ipa.read(marker).decode().strip() in names
             frameworks = {name.split(".framework/")[0] for name in names if ".framework/" in name}
+        watch_filename = f"UTubeMusic-{version}-Watch-unsigned.ipa"
+        if watch_filename in bundle.namelist():
+            watch_bytes = bundle.read(watch_filename)
+            assert hashlib.sha256(watch_bytes).hexdigest() == bundle.read(watch_filename + ".sha256").decode().split()[0]
+            with zipfile.ZipFile(BytesIO(watch_bytes)) as watch_ipa:
+                assert watch_ipa.testzip() is None
+                watch_path = prefix + "Watch/UTubeMusicWatch.app/"
+                watch_info = plistlib.loads(watch_ipa.read(watch_path + "Info.plist"))
+                assert watch_info["DTPlatformName"] == "watchos"
+                assert watch_info["WKCompanionAppBundleIdentifier"] == info["CFBundleIdentifier"]
+                assert watch_info["CFBundleIdentifier"] == info["CFBundleIdentifier"] + ".watchkitapp"
+                assert "audio" in watch_info["UIBackgroundModes"]
+                assert watch_info["CFBundleVersion"] == build
+                assert watch_ipa.read(watch_path + watch_info["CFBundleExecutable"])
+                assert not any(name.startswith(prefix + "Watch/") for name in names)
         release = ROOT / "release"
         release.mkdir(exist_ok=True)
         for name in bundle.namelist():
-            if name in {filename, filename + ".sha256", "native-tests.log"} or re.fullmatch(r"native-[a-z-]+\.png", name):
+            if name in {filename, filename + ".sha256", watch_filename, watch_filename + ".sha256", "native-tests.log"} or re.fullmatch(r"native-[a-z-]+\.png", name):
                 (release / name).write_bytes(bundle.read(name))
     report = {"version": version, "bundle_id": info["CFBundleIdentifier"], "platform": "iphoneos",
               "architecture": "arm64", "sha256": digest, "bytes": len(ipa_bytes), "frameworks": len(frameworks),
               "background_audio": True, "signed_for_device": False, "physical_iPhone_tested": False,
-              "native_tests": native_tests, "python_tests": 30, "native_test_result": "passed",
+              "native_tests": native_tests, "python_tests": 31, "native_test_result": "passed",
               "ci_run": f"https://github.com/iwamoto0414yuuki-droid/UTubeMusic/actions/runs/{args.run}",
               "source_commit": args.commit}
     text = json.dumps(report, indent=2) + "\n"
