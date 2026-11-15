@@ -229,8 +229,8 @@ def episodes(rows, publisher, art):
                 seconds += int(match[1]) * factor
         if re.fullmatch(r"\d+(?::\d{2}){1,2}", length):
             seconds = sum(int(part) * 60 ** i for i, part in enumerate(reversed(length.split(":"))))
-        result.append({"id": ident, "title": row.get("title") or "タイトル不明", "artist": publisher,
-                       "duration": seconds, "thumbnail": thumbnail(row) or art})
+        result.append({"id": ident, "title": row.get("title") or "タイトル不明", "artist": names(row.get("artists")) or publisher,
+                       "duration": row.get("duration_seconds") or seconds, "thumbnail": thumbnail(row) or art})
     return result
 
 
@@ -245,7 +245,9 @@ def follow_feed(api, kind, ident):
             for raw in (data.get(key) or {}).get("results", [])[:12]:
                 if entry := item(raw):
                     releases[entry["id"]] = entry
-        return {"ok": True, "follow": source, "items": list(releases.values())}
+        popular = (data.get("songs") or {}).get("results") or []
+        tracks = episodes(popular[:30], data.get("name") or "", thumbnail(data))
+        return {"ok": True, "follow": source, "items": list(releases.values()), "songs": tracks}
     if kind == "publisher":
         data = api.get_channel(ident)
         source = follow_item({**data, "id": ident}, kind)

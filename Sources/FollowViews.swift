@@ -81,6 +81,8 @@ struct FollowDetailView: View {
     @State private var error: String?
     @State private var order = EpisodeOrder.newest
     @State private var watchEpisode: Song?
+    @State private var saveSong: Song?
+    @State private var songMenu: Song?
 
     private enum EpisodeOrder: String, CaseIterable, Identifiable {
         case newest = "新しい順"
@@ -89,10 +91,11 @@ struct FollowDetailView: View {
     }
 
     private var displayed: FollowSource { feed?.follow ?? source }
+    private var isArtist: Bool { source.kind == "artist" }
     private var followed: Bool { library.follows.contains { $0.id == source.id } }
     private var tracks: [Song] {
         let songs = (feed?.songs ?? []).map(\.song)
-        return order == .newest ? songs : Array(songs.reversed())
+        return isArtist || order == .newest ? songs : Array(songs.reversed())
     }
 
     var body: some View {
@@ -100,7 +103,18 @@ struct FollowDetailView: View {
             LazyVStack(alignment: .leading, spacing: 16) {
                 PlaylistArtwork(name: displayed.title, size: 170, cover: displayed.thumbnail)
                     .frame(maxWidth: .infinity)
-                Text(displayed.title).font(.title.bold())
+                HStack(spacing: 12) {
+                    Text(displayed.title).font(.title.bold())
+                    Spacer(minLength: 0)
+                    if isArtist, let first = tracks.first {
+                        Button { play(first) } label: {
+                            Image(systemName: "play.fill").font(.title3.bold())
+                                .foregroundStyle(.black).frame(width: 52, height: 52)
+                                .background(Palette.accent, in: Circle())
+                                .contentShape(Circle())
+                        }.buttonStyle(.plain).accessibilityLabel("人気曲を先頭から再生")
+                    }
+                }
                 if let publisher = feed?.publisher { FollowLink(source: publisher) }
                 HStack {
                     Text(displayed.label).foregroundStyle(Palette.secondary)
@@ -119,10 +133,13 @@ struct FollowDetailView: View {
                     Text("番組").font(.headline)
                     ForEach(shows) { FollowLink(source: $0) }
                 }
+                if isArtist && !tracks.isEmpty {
+                    popularSongs
+                }
                 if let releases = feed?.items, !releases.isEmpty {
                     CatalogShelf(title: "公開リリース", items: releases)
                 }
-                if let first = tracks.first {
+                if !isArtist, let first = tracks.first {
                     Picker("再生順", selection: $order) {
                         ForEach(EpisodeOrder.allCases) { Text($0.rawValue).tag($0) }
                     }.pickerStyle(.segmented)
@@ -146,11 +163,48 @@ struct FollowDetailView: View {
         .task { await refresh() }
         .refreshable { await refresh() }
         .sheet(item: $watchEpisode) { WatchEpisodeSheet(episode: $0) }
+        .sheet(item: $saveSong) { SaveSongSheet(song: $0) }
+        .sheet(item: $songMenu) { song in
+            SongActionsSheet(song: song, playFromContext: { play(song) })
+        }
         .appFeedback()
     }
 
-    private func play(_ episode: Song) {
-        player.start(tracks, at: episode, source: .podcast(displayed.title))
+    private var popularSongs: some View {
+        let songs = tracks
+        let pageSize = 3
+        let pages = stride(from: 0, to: songs.count, by: pageSize).map {
+            Array(songs[$0..<min($0 + pageSize, songs.count)])
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("人気曲").font(.headline)
+                Spacer()
+                if let first = songs.first {
+                    TextActionButton("すべて再生", font: .caption) { play(first) }
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: pages.count > 1) {
+                LazyHStack(alignment: .top, spacing: 12) {
+                    ForEach(pages, id: \.first?.id) { page in
+                        VStack(spacing: 0) {
+                            ForEach(page) { song in
+                                let saved = library.song(song.id)
+                                SongRow(song: saved ?? song, actionLabel: "\(song.title)を再生", action: { play(song) }) {
+                                    if let saved { songMenu = saved } else { saveSong = song }
+                                }
+                            }
+                        }.containerRelativeFrame(.horizontal) { width, _ in
+                            max(1, width - (pages.count > 1 ? 24 : 0))
+                        }
+                    }
+                }.scrollTargetLayout()
+            }.scrollTargetBehavior(.viewAligned)
+        }
+    }
+
+    private func play(_ song: Song) {
+        player.start(tracks, at: song, source: isArtist ? .collection(displayed.title) : .podcast(displayed.title))
     }
 
     private func refresh() async {
