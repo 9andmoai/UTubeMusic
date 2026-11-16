@@ -5,7 +5,7 @@ struct FollowSource: Identifiable, Codable, Equatable {
     let kind: String
     let title: String
     let subtitle: String
-    let thumbnail: String?
+    var thumbnail: String?
 
     var label: String {
         switch kind {
@@ -59,8 +59,12 @@ struct FollowLink: View {
     var body: some View {
         NavigationLink { FollowDetailView(source: source) } label: {
             HStack(spacing: 12) {
-                PlaylistArtwork(name: source.title, size: size, cover: source.thumbnail)
-                    .clipShape(RoundedRectangle(cornerRadius: source.kind == "artist" ? size / 2 : 8))
+                if source.kind == "podcast" {
+                    PodcastArtwork(source: source, size: size)
+                } else {
+                    PlaylistArtwork(name: source.title, size: size, cover: source.thumbnail)
+                        .clipShape(RoundedRectangle(cornerRadius: source.kind == "artist" ? size / 2 : 8))
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(source.title).font(.headline)
                     Text(source.subtitle.isEmpty ? source.label : source.subtitle).font(.caption).foregroundStyle(Palette.secondary)
@@ -69,6 +73,44 @@ struct FollowLink: View {
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(Palette.secondary)
             }.frame(minHeight: 56).contentShape(Rectangle())
         }.buttonStyle(.plain)
+    }
+}
+
+private struct PodcastArtwork: View {
+    let source: FollowSource
+    let size: CGFloat
+    @EnvironmentObject private var library: LibraryStore
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                PlaylistArtwork(name: source.title, size: size)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipped().clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityHidden(true)
+        .task(id: source.thumbnail ?? source.id) {
+            image = nil
+            if let current = source.thumbnail, let original = await loadImage(current) {
+                if !Task.isCancelled { image = original }
+                return
+            }
+            guard !Task.isCancelled,
+                  let response = try? await PythonService.shared.request(["op": "podcast_cover", "id": source.id]),
+                  let url = response.cover, url != source.thumbnail,
+                  let replacement = await loadImage(url), !Task.isCancelled else { return }
+            image = replacement
+            library.updatePodcastCover(url, id: source.id)
+        }
+    }
+
+    private func loadImage(_ value: String) async -> UIImage? {
+        guard let url = URL(string: value), let data = await ArtworkCache.shared.data(for: url) else { return nil }
+        return UIImage(data: data)
     }
 }
 
@@ -101,8 +143,13 @@ struct FollowDetailView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
-                PlaylistArtwork(name: displayed.title, size: 170, cover: displayed.thumbnail)
-                    .frame(maxWidth: .infinity)
+                Group {
+                    if displayed.kind == "podcast" {
+                        PodcastArtwork(source: displayed, size: 170)
+                    } else {
+                        PlaylistArtwork(name: displayed.title, size: 170, cover: displayed.thumbnail)
+                    }
+                }.frame(maxWidth: .infinity)
                 HStack(spacing: 12) {
                     Text(displayed.title).font(.title.bold())
                     Spacer(minLength: 0)

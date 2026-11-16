@@ -270,6 +270,11 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    func updatePodcastCover(_ cover: String, id: String) {
+        guard let index = follows.firstIndex(where: { $0.id == id && $0.kind == "podcast" && $0.thumbnail != cover }) else { return }
+        try? commit { follows[index].thumbnail = cover }
+    }
+
     func updateCover(_ cover: String, for playlistID: UUID, sourceID: String) {
         guard let index = playlists.firstIndex(where: { $0.id == playlistID && $0.sourceID == sourceID && $0.cover == nil }) else { return }
         try? commit { playlists[index].cover = cover }

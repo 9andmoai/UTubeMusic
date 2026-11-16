@@ -293,6 +293,12 @@ def dispatch(request):
             if kind not in ("podcast", "publisher", "artist"):
                 raise ValueError("フォロー先を確認してください。")
             return follow_feed(api, kind, request.get("id", ""))
+        if op == "podcast_cover":
+            ident = request.get("id", "")
+            if not follow_item({"id": ident, "name": "source"}, "podcast"):
+                raise ValueError("番組IDを確認してください。")
+            data = api.get_podcast(ident, limit=1)
+            return {"ok": True, "cover": thumbnail(data)}
         if op == "cover":
             ident = collection_ref(request.get("id", ""))
             data = api.get_album(ident) if ident.startswith("MPRE") else api.get_playlist(ident, limit=1)

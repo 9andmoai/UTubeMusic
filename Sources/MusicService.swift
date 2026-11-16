@@ -71,7 +71,7 @@ final class PythonService {
         let lifetime: TimeInterval
         switch values["op"] {
         case "suggestions", "search", "catalog_search", "follow_search": lifetime = 180
-        case "home", "collection", "cover": lifetime = 900
+        case "home", "collection", "cover", "podcast_cover": lifetime = 900
         case "lyrics": lifetime = 3600
         default: lifetime = 0
         }
